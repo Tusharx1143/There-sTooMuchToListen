@@ -32,3 +32,9 @@ bin/
 .DS_Store
 ### Superpowers brainstorming
 .superpowers/
+
+### Node
+node_modules/
+dist/
+public/data/*
+!public/data/.gitkeep
