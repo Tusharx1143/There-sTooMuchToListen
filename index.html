@@ -26,6 +26,24 @@
       }
       .axis-sep { opacity: .45; margin: 0 .5em; }
       .axis-genre { color: #a9a9c0; }
+      .now-playing {
+        position: fixed; left: 20px; bottom: 20px; width: min(360px, calc(100vw - 40px));
+        display: none; gap: 14px; padding: 14px;
+        background: rgba(16,16,24,.92); border: 1px solid #2a2a3c; border-radius: 12px;
+        backdrop-filter: blur(10px); color: #ececf5; font: 14px/1.4 system-ui, sans-serif;
+      }
+      .now-playing.visible { display: flex; }
+      .np-art { width: 76px; height: 76px; border-radius: 6px; object-fit: cover; flex: none; }
+      .np-body { min-width: 0; }
+      .now-playing h2 { margin: 0 0 2px; font-size: 15px; }
+      .np-artist { margin: 0; color: #c9c9de; }
+      .np-album { margin: 2px 0 0; color: #85859c; font-size: 12px; }
+      .np-links { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
+      .np-links a { color: #ff7a45; font-size: 12px; }
+      .np-close {
+        position: absolute; top: 8px; right: 10px; background: none; border: 0;
+        color: #85859c; font-size: 20px; cursor: pointer; line-height: 1;
+      }
     </style>
   </head>
   <body>

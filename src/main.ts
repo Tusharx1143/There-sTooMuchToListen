@@ -6,6 +6,7 @@ import { AudioEngine } from './audio/engine'
 import { showUnlockOverlay } from './audio/unlock'
 import { attachPointer } from './input/pointer'
 import { AxisHud } from './ui/axisLabels'
+import { NowPlayingCard } from './ui/nowPlaying'
 
 async function boot(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#atlas')
@@ -26,6 +27,11 @@ async function boot(): Promise<void> {
   const genreLabels = new Map(manifest.genres.map((g) => [g.id, g.label]))
   const hud = new AxisHud(root, layout, genreLabels)
 
+  const card = new NowPlayingCard(root, () => {
+    audio.unpin()
+    card.hide()
+  })
+
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
 
@@ -41,8 +47,13 @@ async function boot(): Promise<void> {
       const hex = renderer.hoverAt(x, y)
       const song = hex ? songAt(hex, layout, store) : null
       if (!song) return
-      if (audio.pinned?.id === song.id) audio.unpin()
-      else audio.pin(song)
+      if (audio.pinned?.id === song.id) {
+        audio.unpin()
+        card.hide()
+      } else {
+        audio.pin(song)
+        card.show(song)
+      }
     },
     onLeave: () => {
       renderer.setHover(null)
