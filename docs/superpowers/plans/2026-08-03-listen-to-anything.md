@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- **Node 20+**, npm. TypeScript `strict: true`, no `any` in committed code.
+- **Node 20+**, npm. TypeScript `strict: true`. No `any` in `src/` or `harvest/`; test doubles
+  under `tests/` may use `any` where faking a DOM or vitest interface.
 - **No UI framework in `src/`** — plain TS + DOM + Canvas 2D.
 - **The browser makes zero music-API calls.** `src/` may only `fetch()` paths under `/data/`. A test enforces this.
 - **Nothing is re-hosted.** Artwork and audio are hotlinked to provider CDNs. Never download, proxy, or store media files.
@@ -139,7 +140,9 @@ Run: `npm install`
 
 `vite.config.ts`:
 ```ts
-import { defineConfig } from 'vite'
+// Must come from 'vitest/config', not 'vite' — Vite's own config type has no
+// `test` key, and `tsc --noEmit` in Step 6 will reject it.
+import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: { globals: true, environment: 'jsdom' },
