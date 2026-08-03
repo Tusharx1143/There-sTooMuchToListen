@@ -11,6 +11,8 @@ import { NowPlayingCard } from './ui/nowPlaying'
 import { Minimap } from './ui/minimap'
 import { SearchBox, buildTargets } from './ui/search'
 import { showStaleNotice } from './ui/staleNotice'
+import { VolumeControl } from './ui/volume'
+import { Momentum } from './render/momentum'
 
 async function boot(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#atlas')
@@ -55,6 +57,11 @@ async function boot(): Promise<void> {
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
   })
 
+  new VolumeControl(root, audio)
+
+  renderer.failedSongs = audio.failed
+  audio.onFailure(() => renderer.invalidate())
+
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
 
@@ -70,6 +77,11 @@ async function boot(): Promise<void> {
 
   const syncMinimap = (): void =>
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+
+  const momentum = new Momentum((dx, dy) => {
+    renderer.panBy(dx, dy)
+    syncMinimap()
+  })
 
   if (isTouchDevice()) {
     attachTouch(canvas, {
@@ -88,6 +100,7 @@ async function boot(): Promise<void> {
         audio.hover(hex ? songAt(hex, layout, store) : null)
       },
       onPan: (dx, dy) => {
+        momentum.push(dx, dy)
         renderer.panBy(dx, dy)
         syncMinimap()
       },
@@ -108,6 +121,9 @@ async function boot(): Promise<void> {
         audio.hover(null)
       },
     })
+
+    canvas.addEventListener('pointerup', () => momentum.release())
+    canvas.addEventListener('pointerdown', () => momentum.stop())
   }
 
   showUnlockOverlay(root, () => {

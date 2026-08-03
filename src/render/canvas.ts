@@ -20,6 +20,9 @@ export function songAt(o: Offset, layout: AtlasLayout, store: CellStore): Song |
 export class AtlasRenderer {
   view: Point = { x: 0, y: 0 }
 
+  /** Song ids whose preview would not play; rendered visibly inert. */
+  failedSongs: ReadonlySet<string> = new Set()
+
   private hover: Offset | null = null
   private dirty = true
   private raf: number | null = null
@@ -121,7 +124,7 @@ export class AtlasRenderer {
           colors: song ? fallbackColors(song.id) : ['#15151f', '#0b0b12'],
           scale: isHover ? HOVER_SCALE : 1,
           highlighted: isHover,
-          dim: hasHover && !isHover,
+          dim: (hasHover && !isHover) || (song !== null && this.failedSongs.has(song.id)),
         })
       }
     }
@@ -138,7 +141,7 @@ export class AtlasRenderer {
         colors: song ? fallbackColors(song.id) : ['#15151f', '#0b0b12'],
         scale: HOVER_SCALE,
         highlighted: true,
-        dim: false,
+        dim: song !== null && this.failedSongs.has(song.id),
       })
     }
   }
