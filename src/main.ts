@@ -7,6 +7,8 @@ import { showUnlockOverlay } from './audio/unlock'
 import { attachPointer } from './input/pointer'
 import { AxisHud } from './ui/axisLabels'
 import { NowPlayingCard } from './ui/nowPlaying'
+import { Minimap } from './ui/minimap'
+import { SearchBox, buildTargets } from './ui/search'
 
 async function boot(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#atlas')
@@ -32,6 +34,24 @@ async function boot(): Promise<void> {
     card.hide()
   })
 
+  const minimap = new Minimap(root, layout, (world) => {
+    renderer.view = { x: 0, y: 0 }
+    renderer.panBy(world.x - window.innerWidth / 2, world.y - window.innerHeight / 2)
+    minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+  })
+  minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+
+  new SearchBox(root, buildTargets(layout, genreLabels), (t) => {
+    const centre =
+      t.kind === 'country'
+        ? layout.centreOf({ country: t.country!, genre: layout.genres[0]! })
+        : layout.centreOf({ country: layout.countries[0]!, genre: t.genre! })
+    if (!centre) return
+    renderer.view = { x: 0, y: 0 }
+    renderer.panBy(centre.x - window.innerWidth / 2, centre.y - window.innerHeight / 2)
+    minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+  })
+
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
 
@@ -42,7 +62,10 @@ async function boot(): Promise<void> {
       hud.update(hex)
       audio.hover(hex ? songAt(hex, layout, store) : null)
     },
-    onPan: (dx, dy) => renderer.panBy(dx, dy),
+    onPan: (dx, dy) => {
+      renderer.panBy(dx, dy)
+      minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+    },
     onClick: (x, y) => {
       const hex = renderer.hoverAt(x, y)
       const song = hex ? songAt(hex, layout, store) : null

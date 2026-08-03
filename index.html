@@ -44,6 +44,22 @@
         position: absolute; top: 8px; right: 10px; background: none; border: 0;
         color: #85859c; font-size: 20px; cursor: pointer; line-height: 1;
       }
+      .minimap {
+        position: fixed; right: 20px; bottom: 20px;
+        border: 1px solid #2a2a3c; border-radius: 8px; cursor: crosshair;
+      }
+      .search { position: fixed; top: 16px; right: 20px; width: 240px; }
+      .search input {
+        width: 100%; padding: 8px 10px; border-radius: 8px;
+        border: 1px solid #2a2a3c; background: rgba(16,16,24,.92); color: #ececf5;
+        font: 13px system-ui, sans-serif;
+      }
+      .search-results { list-style: none; margin: 6px 0 0; padding: 0; }
+      .search-results li {
+        padding: 7px 10px; background: rgba(16,16,24,.96); color: #ececf5;
+        border: 1px solid #2a2a3c; border-top: 0; font: 13px system-ui, sans-serif; cursor: pointer;
+      }
+      .search-results li:hover { background: #23233a; }
     </style>
   </head>
   <body>
