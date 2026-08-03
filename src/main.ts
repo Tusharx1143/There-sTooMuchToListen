@@ -5,6 +5,7 @@ import { AtlasRenderer, songAt } from './render/canvas'
 import { AudioEngine } from './audio/engine'
 import { showUnlockOverlay } from './audio/unlock'
 import { attachPointer } from './input/pointer'
+import { AxisHud } from './ui/axisLabels'
 
 async function boot(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#atlas')
@@ -22,6 +23,9 @@ async function boot(): Promise<void> {
   const renderer = new AtlasRenderer(canvas, layout, store, images)
   const audio = new AudioEngine()
 
+  const genreLabels = new Map(manifest.genres.map((g) => [g.id, g.label]))
+  const hud = new AxisHud(root, layout, genreLabels)
+
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
 
@@ -29,6 +33,7 @@ async function boot(): Promise<void> {
     onHover: (x, y) => {
       const hex = renderer.hoverAt(x, y)
       renderer.setHover(hex)
+      hud.update(hex)
       audio.hover(hex ? songAt(hex, layout, store) : null)
     },
     onPan: (dx, dy) => renderer.panBy(dx, dy),
@@ -41,6 +46,7 @@ async function boot(): Promise<void> {
     },
     onLeave: () => {
       renderer.setHover(null)
+      hud.update(null)
       audio.hover(null)
     },
   })
