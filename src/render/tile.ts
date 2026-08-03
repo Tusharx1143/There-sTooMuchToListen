@@ -18,13 +18,18 @@ export function tileTier(radialPx: number): TileTier {
 }
 
 export type TileOpts = {
-  cx: number
-  cy: number
+  x: number
+  y: number
+  /** Pre-transform hex radius: HEX_SIZE * TILE_GAP. */
   size: number
+  angle: number
+  radial: number
+  tangential: number
+  alpha: number
   image: CanvasImageSource | null
   colors: [string, string]
-  scale: number
   highlighted: boolean
+  /** Failed preview — rendered visibly inert. */
   dim: boolean
 }
 
@@ -42,35 +47,65 @@ export function hexPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, s
 }
 
 export function drawTile(ctx: CanvasRenderingContext2D, o: TileOpts): void {
-  const size = o.size * o.scale
+  const tier = tileTier(o.size * o.radial)
+  const s = o.size
 
   ctx.save()
-  hexPath(ctx, o.cx, o.cy, size)
+  ctx.globalAlpha = o.alpha
+  ctx.translate(o.x, o.y)
+
+  // Everything outside the lens comes through at scale 1; skipping the
+  // transform there is what keeps most of the field cheap.
+  if (o.radial !== 1 || o.tangential !== 1) {
+    ctx.rotate(o.angle)
+    ctx.scale(o.radial, o.tangential)
+  }
+
+  if (tier === 'speck') {
+    ctx.fillStyle = o.colors[0]
+    ctx.fillRect(-s, -s, s * 2, s * 2)
+    ctx.restore()
+    return
+  }
+
+  if (tier === 'solid') {
+    hexPath(ctx, 0, 0, s)
+    ctx.fillStyle = o.colors[0]
+    ctx.fill()
+    ctx.restore()
+    return
+  }
+
+  ctx.save()
+  hexPath(ctx, 0, 0, s)
   ctx.clip()
 
   if (o.image) {
     // Album art is square; cover the hex's bounding box.
-    const d = size * 2
-    ctx.drawImage(o.image, o.cx - d / 2, o.cy - d / 2, d, d)
+    const d = s * 2
+    ctx.drawImage(o.image, -d / 2, -d / 2, d, d)
   } else {
-    const g = ctx.createLinearGradient(o.cx - size, o.cy - size, o.cx + size, o.cy + size)
+    const g = ctx.createLinearGradient(-s, -s, s, s)
     g.addColorStop(0, o.colors[0])
     g.addColorStop(1, o.colors[1])
     ctx.fillStyle = g
-    ctx.fillRect(o.cx - size, o.cy - size, size * 2, size * 2)
+    ctx.fillRect(-s, -s, s * 2, s * 2)
   }
 
   if (o.dim) {
     ctx.fillStyle = 'rgba(7, 7, 12, 0.45)'
-    ctx.fillRect(o.cx - size, o.cy - size, size * 2, size * 2)
+    ctx.fillRect(-s, -s, s * 2, s * 2)
   }
 
   ctx.restore()
 
   if (o.highlighted) {
-    hexPath(ctx, o.cx, o.cy, size)
+    hexPath(ctx, 0, 0, s)
     ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 2
+    // Undo the tile's own scaling so the outline keeps a constant screen width.
+    ctx.lineWidth = 2 / Math.max(o.radial, o.tangential)
     ctx.stroke()
   }
+
+  ctx.restore()
 }
