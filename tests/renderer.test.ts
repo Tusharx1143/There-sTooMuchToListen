@@ -179,3 +179,28 @@ describe('AtlasRenderer.draw', () => {
     expect(asked[0]!.length).toBeLessThan(viewportScoped.length / 2)
   })
 })
+
+describe('focal republication', () => {
+  it('re-emits when the focal cell finishes loading under a still cursor', async () => {
+    const fetcher = (async () => ({ ok: true, status: 200, json: async () => songs(50) })) as unknown as typeof fetch
+    const store = new CellStore({ fetcher })
+    const r = new AtlasRenderer(
+      stubCanvas(), new AtlasLayout(['us', 'br'], [14, 21]), store, stubImages(),
+    )
+
+    const seen: (Offset | null)[] = []
+    r.onFocalChange((o) => seen.push(o))
+
+    // Park the lens over a tile whose cell has not been fetched yet.
+    r.lensTarget = { x: 40, y: 40 }
+    r.step(5000)
+    const before = seen.length
+    expect(r.focal).not.toBeNull()
+
+    // draw() asks for the cells; the cursor never moves again.
+    r.redraw()
+    await vi.waitFor(() => expect(store.status('us-14')).toBe('ready'))
+
+    expect(seen.length).toBeGreaterThan(before)
+  })
+})

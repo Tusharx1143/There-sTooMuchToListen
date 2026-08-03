@@ -31,6 +31,7 @@ export class AtlasRenderer {
 
   private centre: Point = { x: 0, y: 0 }
   private focalOffset: Offset | null = null
+  private focalSong: string | null = null
   private lastFrame = 0
   private readonly focalListeners = new Set<(o: Offset | null) => void>()
 
@@ -48,7 +49,10 @@ export class AtlasRenderer {
     if (!ctx) throw new Error('2d canvas context unavailable')
     this.ctx = ctx
 
-    this.store.onChange(() => this.invalidate())
+    this.store.onChange(() => {
+      this.invalidate()
+      if (this.settled) this.updateFocal()
+    })
     this.images.onLoad(() => this.invalidate())
     this.resize()
 
@@ -107,9 +111,17 @@ export class AtlasRenderer {
     const world = { x: this.centre.x + this.view.x, y: this.centre.y + this.view.y }
     const o = axialToOffset(pixelToAxial(world))
     const next = this.layout.slotAt(o) ? o : null
+    const song = next ? songAt(next, this.layout, this.store) : null
+    const songId = song?.id ?? null
 
-    if (next?.col === this.focalOffset?.col && next?.row === this.focalOffset?.row) return
+    // Track the song as well as the tile: the cursor often parks on a tile
+    // whose cell is still in flight, and without this the arriving data would
+    // never reach the listeners.
+    const sameTile = next?.col === this.focalOffset?.col && next?.row === this.focalOffset?.row
+    if (sameTile && songId === this.focalSong) return
+
     this.focalOffset = next
+    this.focalSong = songId
     for (const cb of this.focalListeners) cb(next)
   }
 
