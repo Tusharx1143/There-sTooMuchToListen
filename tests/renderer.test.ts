@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AtlasLayout } from '../src/atlas/layout'
 import { CellStore } from '../src/data/loader'
+import { requiredCellKeys } from '../src/atlas/viewport'
 import { songAt, AtlasRenderer } from '../src/render/canvas'
 import { ImageCache } from '../src/render/imageCache'
 import { axialToPixel, offsetToAxial, type Offset } from '../src/atlas/hex'
@@ -130,5 +131,51 @@ describe('AtlasRenderer lens', () => {
     r.step(5000)
     expect(seen.length).toBeGreaterThan(0)
     expect(r.focal).not.toBeNull()
+  })
+})
+
+describe('AtlasRenderer.draw', () => {
+  it('requests art for only a handful of tiles, not the whole field', () => {
+    const requested: string[] = []
+    const images = {
+      get: (url: string) => { requested.push(url); return null },
+      onLoad: () => () => {},
+    } as unknown as ImageCache
+
+    const fetcher = (async () => ({ ok: true, status: 200, json: async () => songs(50) })) as unknown as typeof fetch
+    const r = new AtlasRenderer(
+      stubCanvas(), new AtlasLayout(['us', 'br'], [14, 21]), new CellStore({ fetcher }), images,
+    )
+
+    r.lensTarget = { x: 100, y: 100 }
+    r.step(5000)
+    r.redraw()
+
+    expect(requested.length).toBeLessThan(60)
+  })
+
+  it('loads only the cells near the lens, not the whole viewport', () => {
+    // A big atlas, so lens-scoped and viewport-scoped differ starkly.
+    const countries = Array.from({ length: 40 }, (_, i) => `c${i}`)
+    const genres = Array.from({ length: 30 }, (_, i) => i + 1)
+    const big = new AtlasLayout(countries, genres)
+
+    const asked: string[][] = []
+    const store = emptyStore()
+    const original = store.ensure.bind(store)
+    store.ensure = (keys: string[]): void => { asked.push(keys); original(keys) }
+
+    const r = new AtlasRenderer(stubCanvas(), big, store, stubImages())
+    r.redraw()
+
+    const viewportScoped = requiredCellKeys(
+      { x: r.view.x, y: r.view.y, w: window.innerWidth, h: window.innerHeight },
+      big,
+    )
+
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.length).toBeGreaterThan(0)
+    // The whole point of DATA_RADIUS_PX: a small fraction of the visible field.
+    expect(asked[0]!.length).toBeLessThan(viewportScoped.length / 2)
   })
 })

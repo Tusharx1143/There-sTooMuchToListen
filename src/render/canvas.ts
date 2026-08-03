@@ -2,12 +2,13 @@ import { axialToPixel, offsetToAxial, pixelToAxial, axialToOffset, HEX_SIZE, typ
 import { AtlasLayout, CELL_COLS } from '../atlas/layout'
 import { clampView, requiredCellKeys, visibleOffsets } from '../atlas/viewport'
 import type { CellStore } from '../data/loader'
-import { ImageCache, fallbackColors } from './imageCache'
-import { drawTile, TILE_GAP } from './tile'
+import { ImageCache, fallbackColors, speckleColor } from './imageCache'
+import { drawTile, tileTier, TILE_GAP } from './tile'
 import { easeCentre, makeLens, transformTile, unlensPoint, type Lens } from './lens'
 import { cellKey, type Song } from '../types'
 
-const HOVER_SCALE = 1.45
+/** World-space radius around the lens whose cells we actually fetch. */
+const DATA_RADIUS_PX = 120
 /** Under this much distance left to travel, the lens counts as parked. */
 const SETTLE_PX = 0.25
 
@@ -33,7 +34,6 @@ export class AtlasRenderer {
   private lastFrame = 0
   private readonly focalListeners = new Set<(o: Offset | null) => void>()
 
-  private hover: Offset | null = null
   private dirty = true
   private raf: number | null = null
   private readonly ctx: CanvasRenderingContext2D
@@ -169,53 +169,66 @@ export class AtlasRenderer {
     this.raf = null
   }
 
+  /** Forces a synchronous frame. The rAF loop uses this; so do tests. */
+  redraw(): void {
+    this.draw()
+  }
+
   private draw(): void {
     const w = window.innerWidth
     const h = window.innerHeight
-    const rect = { x: this.view.x, y: this.view.y, w, h }
+    const lens = this.lens
 
-    // Ask for the cells we need; the store notifies us when they land.
-    this.store.ensure(requiredCellKeys(rect, this.layout))
+    // Only the lens neighbourhood gets real data. The rest of the field is
+    // speckle — nobody can read a 3px tile, so fetching it would be waste.
+    const focusWorld = { x: lens.cx + this.view.x, y: lens.cy + this.view.y }
+    this.store.ensure(
+      requiredCellKeys(
+        {
+          x: focusWorld.x - DATA_RADIUS_PX,
+          y: focusWorld.y - DATA_RADIUS_PX,
+          w: DATA_RADIUS_PX * 2,
+          h: DATA_RADIUS_PX * 2,
+        },
+        this.layout,
+      ),
+    )
 
     this.ctx.fillStyle = '#07070c'
     this.ctx.fillRect(0, 0, w, h)
 
-    const range = visibleOffsets(rect, this.layout)
-    const hasHover = this.hover !== null
+    // f(d) >= d everywhere, so any tile that lands on screen came from inside
+    // the untransformed view rect — scanning it is a safe over-estimate.
+    const range = visibleOffsets({ x: this.view.x, y: this.view.y, w, h }, this.layout)
+    const size = HEX_SIZE * TILE_GAP
+    const focal = axialToOffset(pixelToAxial(focusWorld))
 
     for (let row = range.rowMin; row <= range.rowMax; row++) {
       for (let col = range.colMin; col <= range.colMax; col++) {
-        const isHover = this.hover?.col === col && this.hover?.row === row
-        const song = songAt({ col, row }, this.layout, this.store)
         const p = axialToPixel(offsetToAxial({ col, row }))
+        const t = transformTile({ x: p.x - this.view.x, y: p.y - this.view.y }, lens)
+
+        const reach = size * Math.max(t.radial, t.tangential)
+        if (t.x < -reach || t.x > w + reach || t.y < -reach || t.y > h + reach) continue
+
+        const tier = tileTier(size * t.radial)
+        const song = songAt({ col, row }, this.layout, this.store)
 
         drawTile(this.ctx, {
-          cx: p.x - this.view.x,
-          cy: p.y - this.view.y,
-          size: HEX_SIZE * TILE_GAP,
-          image: song ? this.images.get(song.art) : null,
-          colors: song ? fallbackColors(song.id) : ['#15151f', '#0b0b12'],
-          scale: isHover ? HOVER_SCALE : 1,
-          highlighted: isHover,
-          dim: (hasHover && !isHover) || (song !== null && this.failedSongs.has(song.id)),
+          x: t.x,
+          y: t.y,
+          size,
+          angle: t.angle,
+          radial: t.radial,
+          tangential: t.tangential,
+          alpha: t.brightness,
+          // Only the art tier may touch the cache — get() starts a fetch.
+          image: tier === 'art' && song ? this.images.get(song.art) : null,
+          colors: song ? fallbackColors(song.id) : [speckleColor(col, row), '#0b0b12'],
+          highlighted: col === focal.col && row === focal.row,
+          dim: song !== null && this.failedSongs.has(song.id),
         })
       }
-    }
-
-    // Redraw the hovered tile last so its scaled-up form sits above neighbours.
-    if (this.hover) {
-      const song = songAt(this.hover, this.layout, this.store)
-      const p = axialToPixel(offsetToAxial(this.hover))
-      drawTile(this.ctx, {
-        cx: p.x - this.view.x,
-        cy: p.y - this.view.y,
-        size: HEX_SIZE * TILE_GAP,
-        image: song ? this.images.get(song.art) : null,
-        colors: song ? fallbackColors(song.id) : ['#15151f', '#0b0b12'],
-        scale: HOVER_SCALE,
-        highlighted: true,
-        dim: song !== null && this.failedSongs.has(song.id),
-      })
     }
   }
 }
