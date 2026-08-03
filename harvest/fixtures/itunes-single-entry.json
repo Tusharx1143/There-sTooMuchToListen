@@ -1,0 +1,17 @@
+{
+  "feed": {
+    "title": { "label": "iTunes Store: Top Songs" },
+    "entry": {
+      "im:name": { "label": "Lonely Entry" },
+      "im:image": [{ "label": "https://is1-ssl.mzstatic.com/image/thumb/ccc/170x170bb.png" }],
+      "im:collection": { "im:name": { "label": "Solo Album" } },
+      "im:artist": { "label": "Solo Artist" },
+      "link": [
+        { "attributes": { "rel": "alternate", "type": "text/html", "href": "https://music.apple.com/kr/album/z/3" } },
+        { "attributes": { "rel": "enclosure", "type": "audio/x-m4a", "href": "https://audio-ssl.itunes.apple.com/z/three.m4a" } }
+      ],
+      "id": { "attributes": { "im:id": "1000003" } },
+      "category": { "attributes": { "im:id": "14", "label": "Pop" } }
+    }
+  }
+}
