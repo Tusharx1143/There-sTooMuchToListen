@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": 3135556,
+      "title": "Deezer Example Track",
+      "preview": "https://cdns-preview.dzcdn.net/stream/example.mp3",
+      "artist": { "name": "Deezer Example Artist" },
+      "album": { "title": "Deezer Example Album", "cover_big": "https://e-cdns-images.dzcdn.net/images/cover/x/500x500-000000-80-0-0.jpg" },
+      "link": "https://www.deezer.com/track/3135556"
+    },
+    {
+      "id": 3135557,
+      "title": "Second Deezer Track",
+      "preview": "",
+      "artist": { "name": "Nobody" },
+      "album": { "title": "No Preview", "cover_big": "https://e-cdns-images.dzcdn.net/images/cover/y/500x500-000000-80-0-0.jpg" },
+      "link": "https://www.deezer.com/track/3135557"
+    }
+  ]
+}
