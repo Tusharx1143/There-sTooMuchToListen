@@ -100,6 +100,16 @@ It wraps drawing in `save / translate(x,y) / rotate(angle) / scale(radial, tange
 
 **Fast path:** when `radial === 1 && tangential === 1` (every tile outside `D` — roughly 4,300 of 5,540) skip the transform entirely and draw at `(x, y)` directly. This is what keeps the frame affordable.
 
+### The cached field layer
+
+Drawing every tile live costs ~18.6ms per frame of canvas work at 1920×1080 — over budget before any application logic runs. The fix rests on an invariant the transform gives us for free: **outside `LENS_RADIUS` both scales are exactly 1 and `brightness` is exactly `BRIGHT_MIN`**, so those tiles are pixel-identical wherever the lens happens to be. They depend only on `view`.
+
+`AtlasRenderer` therefore keeps an offscreen canvas holding the undistorted field, keyed on `view`, canvas size, and `devicePixelRatio`. Each frame it blits that canvas, clips to the lens disc and clears it, then redraws only the ~1,213 warped tiles. Measured: **18.6ms → 2.6ms, a 7.1× reduction.** A full field repaint (pan or resize only) costs 13.6ms — itself cheaper than the old live path, because the cached pass shares one alpha and one scale across every tile and so skips `drawTile`'s per-tile `save`/transform entirely.
+
+The cached layer **deliberately never consults `CellStore`**. `store.ensure()` evicts every cell outside the current lens neighbourhood, so a roaming lens evicts and refetches continuously; letting that traffic invalidate the field repainted it several times a second and cost more than the cache saved. Out there, at 12% alpha, a hashed `speckleColor` hue is indistinguishable from a real album-derived one. This is the invariant the optimisation depends on, and `tests/renderer.test.ts` pins it.
+
+The offscreen context is optional: if `getContext('2d')` returns null (jsdom, and any exotic browser), the renderer falls back to drawing every tile live. The constructor takes an optional canvas factory so tests can inject a counting stub and assert the optimisation directly.
+
 ### `src/render/canvas.ts`
 
 `draw()` becomes: `visibleOffsets(rect, layout)` → per tile, world centre → subtract `view` → `transformTile()` → three render tiers keyed on the tile's **radial** (smaller) extent, `size * radial`:

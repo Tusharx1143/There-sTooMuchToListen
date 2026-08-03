@@ -4,13 +4,15 @@ import { clampView, requiredCellKeys, visibleOffsets } from '../atlas/viewport'
 import type { CellStore } from '../data/loader'
 import { ImageCache, fallbackColors, speckleColor } from './imageCache'
 import { drawTile, tileTier, TILE_GAP } from './tile'
-import { easeCentre, makeLens, transformTile, unlensPoint, type Lens } from './lens'
+import { hexPath } from './tile'
+import { easeCentre, makeLens, transformTile, unlensPoint, BRIGHT_MIN, type Lens } from './lens'
 import { cellKey, type Song } from '../types'
 
 /** World-space radius around the lens whose cells we actually fetch. */
 const DATA_RADIUS_PX = 120
 /** Under this much distance left to travel, the lens counts as parked. */
 const SETTLE_PX = 0.25
+const BG = '#07070c'
 
 /** Pure lookup: which song lives on this hex, if its cell is loaded? */
 export function songAt(o: Offset, layout: AtlasLayout, store: CellStore): Song | null {
@@ -39,15 +41,32 @@ export class AtlasRenderer {
   private raf: number | null = null
   private readonly ctx: CanvasRenderingContext2D
 
+  /**
+   * The undistorted field, cached. Outside the lens radius both scales are
+   * exactly 1 and brightness is exactly BRIGHT_MIN, so those tiles are
+   * pixel-identical wherever the lens happens to be — they depend only on
+   * `view`. The lens moves constantly; `view` changes only when you pan.
+   */
+  private field: HTMLCanvasElement | null = null
+  private fieldCtx: CanvasRenderingContext2D | null = null
+  private fieldKey = ''
+  private fieldStale = true
+
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly layout: AtlasLayout,
     private readonly store: CellStore,
     private readonly images: ImageCache,
+    makeCanvas: () => HTMLCanvasElement = () => document.createElement('canvas'),
   ) {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('2d canvas context unavailable')
     this.ctx = ctx
+
+    // A missing offscreen context is survivable: we just draw every tile live.
+    this.field = makeCanvas()
+    this.fieldCtx = this.field.getContext('2d')
+    if (!this.fieldCtx) this.field = null
 
     this.store.onChange(() => {
       this.invalidate()
@@ -144,6 +163,7 @@ export class AtlasRenderer {
     this.lensTarget = clamp(this.lensTarget)
     this.centre = clamp(this.centre)
 
+    this.fieldStale = true
     this.invalidate()
   }
 
@@ -206,20 +226,64 @@ export class AtlasRenderer {
       ),
     )
 
-    this.ctx.fillStyle = '#07070c'
-    this.ctx.fillRect(0, 0, w, h)
-
-    // f(d) >= d everywhere, so any tile that lands on screen came from inside
-    // the untransformed view rect — scanning it is a safe over-estimate.
-    const range = visibleOffsets({ x: this.view.x, y: this.view.y, w, h }, this.layout)
     const size = HEX_SIZE * TILE_GAP
     const focal = axialToOffset(pixelToAxial(focusWorld))
+    const R = lens.radius
+
+    if (this.paintField(w, h)) {
+      this.ctx.drawImage(this.field!, 0, 0, w, h)
+      // The cached layer also drew the tiles the lens now owns; punch them out
+      // so the undistorted originals don't show through the distorted gaps.
+      this.ctx.save()
+      this.ctx.beginPath()
+      this.ctx.arc(lens.cx, lens.cy, R, 0, Math.PI * 2)
+      this.ctx.clip()
+      this.ctx.fillStyle = BG
+      this.ctx.fillRect(lens.cx - R, lens.cy - R, R * 2, R * 2)
+      this.ctx.restore()
+    } else {
+      this.ctx.fillStyle = BG
+      this.ctx.fillRect(0, 0, w, h)
+      this.paintTiles(visibleOffsets({ x: this.view.x, y: this.view.y, w, h }, this.layout),
+        lens, size, focal, w, h, false)
+      return
+    }
+
+    // Only the disc is live. f(d) < D for every d < D, so the tiles that land
+    // inside it are exactly those whose undistorted distance is under R.
+    this.paintTiles(
+      visibleOffsets(
+        { x: focusWorld.x - R, y: focusWorld.y - R, w: R * 2, h: R * 2 },
+        this.layout,
+      ),
+      lens, size, focal, w, h, true,
+    )
+  }
+
+  private paintTiles(
+    range: { colMin: number; colMax: number; rowMin: number; rowMax: number },
+    lens: Lens,
+    size: number,
+    focal: Offset,
+    w: number,
+    h: number,
+    discOnly: boolean,
+  ): void {
+    const r2 = lens.radius * lens.radius
 
     for (let row = range.rowMin; row <= range.rowMax; row++) {
       for (let col = range.colMin; col <= range.colMax; col++) {
         const p = axialToPixel(offsetToAxial({ col, row }))
-        const t = transformTile({ x: p.x - this.view.x, y: p.y - this.view.y }, lens)
+        const sx = p.x - this.view.x
+        const sy = p.y - this.view.y
 
+        if (discOnly) {
+          const dx = sx - lens.cx
+          const dy = sy - lens.cy
+          if (dx * dx + dy * dy >= r2) continue // the cached field owns this one
+        }
+
+        const t = transformTile({ x: sx, y: sy }, lens)
         const reach = size * Math.max(t.radial, t.tangential)
         if (t.x < -reach || t.x > w + reach || t.y < -reach || t.y > h + reach) continue
 
@@ -242,5 +306,51 @@ export class AtlasRenderer {
         })
       }
     }
+  }
+
+  /**
+   * Repaints the cached field if `view`, the canvas size, or the loaded cells
+   * have moved on. Returns false when there is no offscreen context to use.
+   */
+  private paintField(w: number, h: number): boolean {
+    const fctx = this.fieldCtx
+    const field = this.field
+    if (!fctx || !field) return false
+
+    const dpr = window.devicePixelRatio || 1
+    const key = `${this.view.x}|${this.view.y}|${w}|${h}|${dpr}`
+    if (!this.fieldStale && key === this.fieldKey) return true
+
+    if (field.width !== Math.floor(w * dpr) || field.height !== Math.floor(h * dpr)) {
+      field.width = Math.floor(w * dpr)
+      field.height = Math.floor(h * dpr)
+    }
+    fctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    fctx.fillStyle = BG
+    fctx.fillRect(0, 0, w, h)
+
+    // Every tile out here is solid-tier at scale 1 and a single shared alpha,
+    // so we can skip drawTile's per-tile save/transform entirely.
+    fctx.globalAlpha = BRIGHT_MIN
+    const size = HEX_SIZE * TILE_GAP
+    const range = visibleOffsets({ x: this.view.x, y: this.view.y, w, h }, this.layout)
+
+    for (let row = range.rowMin; row <= range.rowMax; row++) {
+      for (let col = range.colMin; col <= range.colMax; col++) {
+        const p = axialToPixel(offsetToAxial({ col, row }))
+        // Speckle only — deliberately never consults the store. Cells load and
+        // evict as the lens roams, and letting that touch this layer would
+        // invalidate it several times a second and cost more than it saves.
+        // At 12% alpha, out here, the hashed hue is indistinguishable anyway.
+        fctx.fillStyle = speckleColor(col, row)
+        hexPath(fctx, p.x - this.view.x, p.y - this.view.y, size)
+        fctx.fill()
+      }
+    }
+
+    fctx.globalAlpha = 1
+    this.fieldKey = key
+    this.fieldStale = false
+    return true
   }
 }

@@ -47,8 +47,15 @@ describe('lens constant budgets at 1920x1080', () => {
     expect(s.art).toBeLessThan(IMAGE_CACHE_CAPACITY)
   })
 
-  it('keeps the transformed tile count affordable', () => {
+  /**
+   * This is the number that predicts frame cost. The undistorted remainder is
+   * served from the cached field canvas, so only the warped tiles are redrawn
+   * as the lens moves — the common case by far.
+   */
+  it('keeps the per-frame transformed tile count affordable', () => {
     expect(s.warped).toBeGreaterThan(0)
     expect(s.warped).toBeLessThan(1500)
+    // And it must stay a small slice of the field, or the cache buys nothing.
+    expect(s.warped).toBeLessThan(s.total / 3)
   })
 })

@@ -204,3 +204,106 @@ describe('focal republication', () => {
     expect(seen.length).toBeGreaterThan(before)
   })
 })
+
+function countingCanvas(): { canvas: HTMLCanvasElement; counts: Record<string, number>; reset: () => void } {
+  const counts: Record<string, number> = {}
+  const ctx = new Proxy({}, {
+    get: (_t, prop) => {
+      const name = String(prop)
+      if (name === 'createLinearGradient') return () => ({ addColorStop: () => {} })
+      return (...a: unknown[]) => { counts[name] = (counts[name] ?? 0) + 1; return undefined }
+    },
+    set: () => true,
+  })
+  const canvas = { width: 0, height: 0, style: {}, getContext: () => ctx } as unknown as HTMLCanvasElement
+  return { canvas, counts, reset: () => { for (const k in counts) delete counts[k] } }
+}
+
+function bigLayout(): AtlasLayout {
+  return new AtlasLayout(
+    Array.from({ length: 40 }, (_, i) => `c${i}`),
+    Array.from({ length: 30 }, (_, i) => i + 1),
+  )
+}
+
+describe('offscreen field cache', () => {
+  const realW = window.innerWidth
+  const realH = window.innerHeight
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { value: 1920, configurable: true })
+    Object.defineProperty(window, 'innerHeight', { value: 1080, configurable: true })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { value: realW, configurable: true })
+    Object.defineProperty(window, 'innerHeight', { value: realH, configurable: true })
+  })
+
+  it('repaints only the lens disc when the lens moves', () => {
+    const main = countingCanvas()
+    const field = countingCanvas()
+    const r = new AtlasRenderer(main.canvas, bigLayout(), emptyStore(), stubImages(), () => field.canvas)
+
+    r.redraw()
+    const fullFieldFills = field.counts.fill ?? 0
+    expect(fullFieldFills).toBeGreaterThan(4000)
+
+    main.reset()
+    field.reset()
+
+    r.lensTarget = { x: 700, y: 500 }
+    r.step(5000)
+    r.redraw()
+
+    // The field is untouched, and the live pass covers only the disc.
+    expect(field.counts.fill ?? 0).toBe(0)
+    expect(main.counts.drawImage ?? 0).toBe(1)
+    expect(main.counts.fill ?? 0).toBeLessThan(fullFieldFills / 3)
+  })
+
+  it('repaints the field when the view pans', () => {
+    const main = countingCanvas()
+    const field = countingCanvas()
+    const r = new AtlasRenderer(main.canvas, bigLayout(), emptyStore(), stubImages(), () => field.canvas)
+
+    r.redraw()
+    field.reset()
+
+    r.panBy(240, 160)
+    r.redraw()
+
+    expect(field.counts.fill ?? 0).toBeGreaterThan(4000)
+  })
+
+  it('falls back to drawing every tile live without an offscreen context', () => {
+    const main = countingCanvas()
+    const noCtx = { width: 0, height: 0, style: {}, getContext: () => null } as unknown as HTMLCanvasElement
+    const r = new AtlasRenderer(main.canvas, bigLayout(), emptyStore(), stubImages(), () => noCtx)
+
+    r.redraw()
+
+    expect(main.counts.drawImage ?? 0).toBe(0)
+    expect(main.counts.fill ?? 0).toBeGreaterThan(4000)
+  })
+
+  it('does not repaint the field when cells load or evict', async () => {
+    const main = countingCanvas()
+    const field = countingCanvas()
+    const fetcher = (async () => ({ ok: true, status: 200, json: async () => songs(50) })) as unknown as typeof fetch
+    const store = new CellStore({ fetcher })
+    const r = new AtlasRenderer(main.canvas, bigLayout(), store, stubImages(), () => field.canvas)
+
+    const loaded = new Promise<void>((res) => {
+      const off = store.onChange(() => { off(); res() })
+    })
+    r.redraw()
+    await loaded
+    field.reset()
+
+    // Cell traffic must not touch the cached layer: the lens roams constantly,
+    // which evicts and refetches, and coupling the two thrashes the cache.
+    r.redraw()
+    expect(field.counts.fill ?? 0).toBe(0)
+  })
+})
