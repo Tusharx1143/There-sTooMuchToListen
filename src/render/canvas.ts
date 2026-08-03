@@ -3,11 +3,10 @@ import { AtlasLayout, CELL_COLS } from '../atlas/layout'
 import { clampView, requiredCellKeys, visibleOffsets } from '../atlas/viewport'
 import type { CellStore } from '../data/loader'
 import { ImageCache, fallbackColors } from './imageCache'
-import { drawTile } from './tile'
+import { drawTile, TILE_GAP } from './tile'
 import { cellKey, type Song } from '../types'
 
 const HOVER_SCALE = 1.45
-const TILE_GAP = 0.94
 
 /** Pure lookup: which song lives on this hex, if its cell is loaded? */
 export function songAt(o: Offset, layout: AtlasLayout, store: CellStore): Song | null {

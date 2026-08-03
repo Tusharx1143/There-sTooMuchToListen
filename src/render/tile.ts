@@ -1,3 +1,22 @@
+/** Below this radial extent a tile is too small to be worth an image request. */
+export const ART_MIN_PX = 32
+/** Below this, skip the hex path entirely and draw a bare rect. */
+export const SOLID_MIN_PX = 8
+export const TILE_GAP = 0.94
+
+export type TileTier = 'art' | 'solid' | 'speck'
+
+/**
+ * Keyed on the tile's radial (smaller) extent, not the tangential one: under
+ * the lens a rim tile can be 40px across and 5px deep, and a sliver is not a
+ * readable cover.
+ */
+export function tileTier(radialPx: number): TileTier {
+  if (radialPx >= ART_MIN_PX) return 'art'
+  if (radialPx >= SOLID_MIN_PX) return 'solid'
+  return 'speck'
+}
+
 export type TileOpts = {
   cx: number
   cy: number
