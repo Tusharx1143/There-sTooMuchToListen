@@ -55,7 +55,14 @@ describe('NowPlayingCard', () => {
   it('escapes markup in song text rather than injecting it', () => {
     const root = document.createElement('div')
     const card = new NowPlayingCard(root, () => {})
-    card.show({ ...song, title: '<img src=x onerror=alert(1)>' })
-    expect(root.querySelector('img')).toBeNull()
+    const malicious = '<img src=x onerror=alert(1)>'
+    card.show({ ...song, title: malicious })
+
+    // Only the legitimate album-art <img> (pointing at song.art) may exist —
+    // the malicious title must never be parsed into markup of its own.
+    const imgs = [...root.querySelectorAll('img')]
+    expect(imgs).toHaveLength(1)
+    expect(imgs[0]!.src).toBe(song.art)
+    expect(root.querySelector('h2')?.textContent).toBe(malicious)
   })
 })

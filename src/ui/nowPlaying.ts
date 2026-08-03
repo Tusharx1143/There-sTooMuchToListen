@@ -52,7 +52,7 @@ export class NowPlayingCard {
     close.setAttribute('aria-label', 'Unpin song')
     close.addEventListener('click', () => this.onClose())
 
-    this.el.append(body, close)
+    this.el.append(art, body, close)
     this.el.classList.add('visible')
   }
 
