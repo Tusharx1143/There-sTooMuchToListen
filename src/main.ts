@@ -5,6 +5,7 @@ import { AtlasRenderer, songAt } from './render/canvas'
 import { AudioEngine } from './audio/engine'
 import { showUnlockOverlay } from './audio/unlock'
 import { attachPointer } from './input/pointer'
+import { attachTouch, isTouchDevice } from './input/touch'
 import { AxisHud } from './ui/axisLabels'
 import { NowPlayingCard } from './ui/nowPlaying'
 import { Minimap } from './ui/minimap'
@@ -55,35 +56,57 @@ async function boot(): Promise<void> {
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
 
-  attachPointer(canvas, {
-    onHover: (x, y) => {
-      const hex = renderer.hoverAt(x, y)
-      renderer.setHover(hex)
-      hud.update(hex)
-      audio.hover(hex ? songAt(hex, layout, store) : null)
-    },
-    onPan: (dx, dy) => {
-      renderer.panBy(dx, dy)
-      minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
-    },
-    onClick: (x, y) => {
-      const hex = renderer.hoverAt(x, y)
-      const song = hex ? songAt(hex, layout, store) : null
-      if (!song) return
-      if (audio.pinned?.id === song.id) {
-        audio.unpin()
-        card.hide()
-      } else {
-        audio.pin(song)
-        card.show(song)
-      }
-    },
-    onLeave: () => {
-      renderer.setHover(null)
-      hud.update(null)
-      audio.hover(null)
-    },
-  })
+  const playAt = (x: number, y: number): void => {
+    const hex = renderer.hoverAt(x, y)
+    const song = hex ? songAt(hex, layout, store) : null
+    renderer.setHover(hex)
+    hud.update(hex)
+    if (!song) return
+    audio.pin(song)
+    card.show(song)
+  }
+
+  const syncMinimap = (): void =>
+    minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+
+  if (isTouchDevice()) {
+    attachTouch(canvas, {
+      onTap: playAt,
+      onPan: (dx, dy) => {
+        renderer.panBy(dx, dy)
+        syncMinimap()
+      },
+    })
+  } else {
+    attachPointer(canvas, {
+      onHover: (x, y) => {
+        const hex = renderer.hoverAt(x, y)
+        renderer.setHover(hex)
+        hud.update(hex)
+        audio.hover(hex ? songAt(hex, layout, store) : null)
+      },
+      onPan: (dx, dy) => {
+        renderer.panBy(dx, dy)
+        syncMinimap()
+      },
+      onClick: (x, y) => {
+        const hex = renderer.hoverAt(x, y)
+        const song = hex ? songAt(hex, layout, store) : null
+        if (!song) return
+        if (audio.pinned?.id === song.id) {
+          audio.unpin()
+          card.hide()
+        } else {
+          audio.pin(song)
+          card.show(song)
+        }
+      },
+      onLeave: () => {
+        renderer.setHover(null)
+        audio.hover(null)
+      },
+    })
+  }
 
   showUnlockOverlay(root, () => {
     audio.setVolume(1)
