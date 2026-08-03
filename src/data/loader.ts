@@ -31,7 +31,7 @@ export class CellStore {
   private readonly retries: number
 
   constructor(opts: { fetcher?: typeof fetch; base?: string; retries?: number } = {}) {
-    this.fetcher = opts.fetcher ?? fetch
+    this.fetcher = opts.fetcher ?? fetch.bind(globalThis)
     this.base = opts.base ?? DEFAULT_BASE
     this.retries = opts.retries ?? 1
   }
