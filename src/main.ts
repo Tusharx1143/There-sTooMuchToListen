@@ -10,6 +10,7 @@ import { AxisHud } from './ui/axisLabels'
 import { NowPlayingCard } from './ui/nowPlaying'
 import { Minimap } from './ui/minimap'
 import { SearchBox, buildTargets } from './ui/search'
+import { showStaleNotice } from './ui/staleNotice'
 
 async function boot(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#atlas')
@@ -17,6 +18,7 @@ async function boot(): Promise<void> {
   if (!canvas || !root) throw new Error('missing #atlas or #ui')
 
   const manifest = await loadManifest()
+  showStaleNotice(root, manifest.harvestedAt)
   const layout = new AtlasLayout(
     manifest.countries,
     manifest.genres.map((g) => g.id),
