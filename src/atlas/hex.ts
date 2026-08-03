@@ -2,8 +2,12 @@ export type Axial = { q: number; r: number }
 export type Offset = { col: number; row: number }
 export type Point = { x: number; y: number }
 
-/** Distance from a hex centre to a corner, in CSS pixels. */
-export const HEX_SIZE = 34
+/**
+ * Distance from a hex centre to a corner, in CSS pixels. Small on purpose —
+ * legibility comes from the lens (src/render/lens.ts), not from tile size, and
+ * a dense field is the whole point.
+ */
+export const HEX_SIZE = 12
 
 const SQRT3 = Math.sqrt(3)
 
