@@ -1,0 +1,23 @@
+{
+  "headers": { "status": "success", "results_count": 2 },
+  "results": [
+    {
+      "id": "1886711",
+      "name": "Jamendo Example Track",
+      "artist_name": "Jamendo Example Artist",
+      "album_name": "Jamendo Example Album",
+      "album_image": "https://usercontent.jamendo.com/example-300.jpg",
+      "audio": "https://prod-1.storage.jamendo.com/?trackid=1886711&format=mp31",
+      "shareurl": "https://www.jamendo.com/track/1886711"
+    },
+    {
+      "id": "1886712",
+      "name": "No Audio Track",
+      "artist_name": "Nobody",
+      "album_name": "Empty",
+      "album_image": "https://usercontent.jamendo.com/empty-300.jpg",
+      "audio": "",
+      "shareurl": "https://www.jamendo.com/track/1886712"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 ### IntelliJ IDEA ###
+.idea/
 out/
 !**/src/main/**/out/
 !**/src/test/**/out/
@@ -38,3 +39,13 @@ node_modules/
 dist/
 public/data/*
 !public/data/.gitkeep
+
+### Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+### Env
+.env
+.env.local

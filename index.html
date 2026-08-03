@@ -60,6 +60,18 @@
         border: 1px solid #2a2a3c; border-top: 0; font: 13px system-ui, sans-serif; cursor: pointer;
       }
       .search-results li:hover { background: #23233a; }
+      .stale-notice {
+        position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
+        margin: 0; color: #6a6a80; font: 11px system-ui, sans-serif;
+      }
+      .volume {
+        position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 10px; border-radius: 999px;
+        background: rgba(16,16,24,.9); border: 1px solid #2a2a3c;
+      }
+      .volume button { background: none; border: 0; cursor: pointer; font-size: 15px; line-height: 1; }
+      .volume input[type=range] { width: 90px; accent-color: #ff7a45; }
     </style>
   </head>
   <body>

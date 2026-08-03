@@ -34,6 +34,8 @@ export class AudioEngine {
   private muted = false
 
   private readonly listeners = new Set<() => void>()
+  readonly failed = new Set<string>()
+  private readonly failureListeners = new Set<(songId: string) => void>()
 
   constructor(opts: { debounceMs?: number; fadeMs?: number; make?: () => AudioLike } = {}) {
     this.debounceMs = opts.debounceMs ?? HOVER_DEBOUNCE_MS
@@ -61,6 +63,11 @@ export class AudioEngine {
   onChange(cb: () => void): () => void {
     this.listeners.add(cb)
     return () => this.listeners.delete(cb)
+  }
+
+  onFailure(cb: (songId: string) => void): () => void {
+    this.failureListeners.add(cb)
+    return () => this.failureListeners.delete(cb)
   }
 
   hover(song: Song | null): void {
@@ -126,9 +133,9 @@ export class AudioEngine {
     incoming.song = song
 
     void incoming.el.play().catch(() => {
-      // Autoplay blocked or a dead preview URL: leave the tile silent
-      // rather than throwing. src/audio/unlock.ts handles the first case.
+      this.failed.add(song.id)
       incoming.song = null
+      for (const cb of this.failureListeners) cb(song.id)
       this.emit()
     })
 

@@ -10,6 +10,9 @@ import { AxisHud } from './ui/axisLabels'
 import { NowPlayingCard } from './ui/nowPlaying'
 import { Minimap } from './ui/minimap'
 import { SearchBox, buildTargets } from './ui/search'
+import { showStaleNotice } from './ui/staleNotice'
+import { VolumeControl } from './ui/volume'
+import { Momentum } from './render/momentum'
 
 async function boot(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#atlas')
@@ -17,6 +20,7 @@ async function boot(): Promise<void> {
   if (!canvas || !root) throw new Error('missing #atlas or #ui')
 
   const manifest = await loadManifest()
+  showStaleNotice(root, manifest.harvestedAt)
   const layout = new AtlasLayout(
     manifest.countries,
     manifest.genres.map((g) => g.id),
@@ -53,13 +57,24 @@ async function boot(): Promise<void> {
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
   })
 
+  new VolumeControl(root, audio)
+
+  renderer.failedSongs = audio.failed
+  audio.onFailure(() => renderer.invalidate())
+
+  // The lens picks the focal tile; the HUD and audio follow it rather than raw
+  // pointer position, so they only fire once it has parked.
+  renderer.onFocalChange((hex) => {
+    hud.update(hex)
+    audio.hover(hex ? songAt(hex, layout, store) : null)
+  })
+
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
 
   const playAt = (x: number, y: number): void => {
     const hex = renderer.hoverAt(x, y)
     const song = hex ? songAt(hex, layout, store) : null
-    renderer.setHover(hex)
     hud.update(hex)
     if (!song) return
     audio.pin(song)
@@ -69,7 +84,20 @@ async function boot(): Promise<void> {
   const syncMinimap = (): void =>
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
 
+  const momentum = new Momentum((dx, dy) => {
+    renderer.panBy(dx, dy)
+    syncMinimap()
+  })
+
   if (isTouchDevice()) {
+    // No cursor to follow: park the lens mid-screen and let panning move the
+    // world beneath it.
+    const pinLens = (): void => {
+      renderer.lensTarget = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+    }
+    pinLens()
+    window.addEventListener('resize', pinLens)
+
     attachTouch(canvas, {
       onTap: playAt,
       onPan: (dx, dy) => {
@@ -80,12 +108,10 @@ async function boot(): Promise<void> {
   } else {
     attachPointer(canvas, {
       onHover: (x, y) => {
-        const hex = renderer.hoverAt(x, y)
-        renderer.setHover(hex)
-        hud.update(hex)
-        audio.hover(hex ? songAt(hex, layout, store) : null)
+        renderer.lensTarget = { x, y }
       },
       onPan: (dx, dy) => {
+        momentum.push(dx, dy)
         renderer.panBy(dx, dy)
         syncMinimap()
       },
@@ -102,15 +128,16 @@ async function boot(): Promise<void> {
         }
       },
       onLeave: () => {
-        renderer.setHover(null)
+        // Leave the lens parked where it is rather than snapping it away.
         audio.hover(null)
       },
     })
+
+    canvas.addEventListener('pointerup', () => momentum.release())
+    canvas.addEventListener('pointerdown', () => momentum.stop())
   }
 
-  showUnlockOverlay(root, () => {
-    audio.setVolume(1)
-  })
+  showUnlockOverlay(root, () => {})
 }
 
 void boot().catch((err: unknown) => {

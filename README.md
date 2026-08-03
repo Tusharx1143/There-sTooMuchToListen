@@ -19,6 +19,11 @@ music, one hex at a time.
   minimap to see where you are in the whole atlas and click to teleport.
 - **Touch-friendly.** On phones and tablets, drag to pan and tap to play — the
   same atlas, a different input model.
+- **Flick to coast.** A drag on desktop carries its velocity forward with
+  momentum, so a flick keeps gliding and settles on its own.
+- **Remembers your volume.** The volume slider and mute button persist across
+  visits; a tile whose preview fails to play is dimmed rather than failing
+  silently.
 
 ## Under the hood
 
@@ -32,7 +37,11 @@ music, one hex at a time.
   music APIs and writes small static JSON shards — the browser itself never calls
   a music API directly, it only ever reads its own pre-built data files. The
   harvest is resumable and tolerates individual cells failing without losing the
-  rest of the run.
+  rest of the run. iTunes is the primary source; a Deezer pass tops up any cell
+  that came back thin. A Jamendo source (Creative Commons long tail) is also
+  available, opt-in via `JAMENDO_CLIENT_ID` — see `.env.example`.
+- **Freshness:** the catalogue's manifest records when it was last harvested; a
+  quiet on-screen notice appears once it's more than 30 days old.
 
 ## Tech stack
 
@@ -51,9 +60,20 @@ npm run harvest
 # Start the dev server
 npm run dev
 
-# Run the test suite
+# Run the unit test suite
 npm test
+
+# Run the Playwright smoke tests (builds + serves the app first)
+npm run test:e2e
+
+# Manually check the harvest sources still work against the real APIs
+# (never run in CI — hits live network)
+npm run test:contract
 ```
+
+To enable the optional Jamendo source, copy `.env.example` to `.env` and set
+`JAMENDO_CLIENT_ID` (a free key from https://devportal.jamendo.com). It's only
+read by the harvest — nothing at runtime needs it.
 
 ## Project layout
 

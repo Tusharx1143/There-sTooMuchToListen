@@ -70,6 +70,20 @@ export class ImageCache {
   }
 }
 
+/**
+ * Colour for a hex with no song behind it. Most of the field is unloaded by
+ * design — only the lens neighbourhood fetches cells — so the speckle is what
+ * keeps the grid looking dense for free.
+ */
+export function speckleColor(col: number, row: number): string {
+  // Distinct multipliers per axis, so (2,11) and (11,2) don't land on the same
+  // hue and stripe the field diagonally. Integer maths only — this runs for
+  // every tile of every frame, and a template string per tile would show up.
+  let h = Math.imul(col, 0x27d4eb2d) ^ Math.imul(row + 0x165667b1, 0x85ebca6b)
+  h ^= h >>> 15
+  return `hsl(${Math.abs(h) % 360}, 38%, 22%)`
+}
+
 /** Deterministic two-tone gradient so a missing cover never shows a broken box. */
 export function fallbackColors(id: string): [string, string] {
   let hash = 0
