@@ -126,9 +126,7 @@ async function boot(): Promise<void> {
     canvas.addEventListener('pointerdown', () => momentum.stop())
   }
 
-  showUnlockOverlay(root, () => {
-    audio.setVolume(1)
-  })
+  showUnlockOverlay(root, () => {})
 }
 
 void boot().catch((err: unknown) => {
