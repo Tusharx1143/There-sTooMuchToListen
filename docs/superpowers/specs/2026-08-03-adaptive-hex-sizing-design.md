@@ -1,5 +1,10 @@
 # Adaptive Hex Sizing — Design
 
+> **Superseded by `2026-08-03-lens-distortion-design.md`. Not implemented.**
+> That spec solves the same "the atlas looks tiny" problem with density plus a
+> cursor-following lens, which makes viewport-derived hex sizing unnecessary —
+> the base size becomes a fixed constant. Kept for the record.
+
 **Problem:** `HEX_SIZE` (`src/atlas/hex.ts:6`) is a fixed 34 CSS-pixel constant, independent of screen size. On a large or high-resolution display the whole atlas renders correctly but looks tiny relative to the window, and the hover pop-out (`HOVER_SCALE = 1.45`, `src/render/canvas.ts:9`) doesn't stand out enough against neighboring tiles. This was confirmed live: on a 7680×3644 virtual display, the entire 1,200-cell atlas rendered into what looked like a small corner of the screen.
 
 **Goal:** Make the hex grid size itself to the viewport so it reads clearly on any screen, and make the hover state pop more. No spotlight/dimming redesign, no manual zoom control, no changes to album-art loading — those are explicitly out of scope for this round.
