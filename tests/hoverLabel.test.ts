@@ -119,6 +119,22 @@ describe('HoverLabel', () => {
     expect(el(root).style.visibility).toBe('visible')
   })
 
+  /** A panel occupies the same right-hand space the label is drawn over. */
+  it('hides outright while a panel is open', () => {
+    const label = new HoverLabel(root)
+    label.show(song())
+    settle(label, 0)
+    expect(el(root).style.visibility).toBe('visible')
+
+    label.setHidden(true)
+    settle(label, 0)
+    expect(el(root).style.visibility).toBe('hidden')
+
+    label.setHidden(false)
+    settle(label, 0)
+    expect(el(root).style.visibility).toBe('visible')
+  })
+
   it('keeps itself inside the viewport', () => {
     const label = new HoverLabel(root)
     label.show(song())

@@ -104,6 +104,13 @@
       .tool-btn:hover { background: var(--hover); opacity: 1; }
       .tool-btn[aria-expanded="true"] { background: var(--hover); opacity: 1; box-shadow: inset 0 0 0 1px var(--border); }
       .tool-btn svg { width: 18px; height: 18px; display: block; }
+      /* The source link leaves the app; the other three act on it. A hairline
+         keeps that distinction visible without a second row of chrome. */
+      .tool-btn[data-source] { margin-left: 9px; position: relative; }
+      .tool-btn[data-source]::before {
+        content: ''; position: absolute; left: -5px; top: 50%;
+        width: 1px; height: 16px; margin-top: -8px; background: var(--border);
+      }
 
       /* --- Overlay panels -------------------------------------------------
          Deliberately not a card: the panel fades its own ground out to the

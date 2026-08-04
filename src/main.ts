@@ -97,8 +97,15 @@ async function boot(): Promise<void> {
     onAbout: () => about.panel.toggle(),
     onSettings: () => settingsPanel.panel.toggle(),
   })
-  about.panel.onChange((open) => toolbar.setExpanded('about', open))
-  settingsPanel.panel.onChange((open) => toolbar.setExpanded('settings', open))
+  // A panel and the hover readout share the right-hand side of the screen.
+  about.panel.onChange((open) => {
+    toolbar.setExpanded('about', open)
+    label.setHidden(open)
+  })
+  settingsPanel.panel.onChange((open) => {
+    toolbar.setExpanded('settings', open)
+    label.setHidden(open)
+  })
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAllPanels()

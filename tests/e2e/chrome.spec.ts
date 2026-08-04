@@ -45,6 +45,41 @@ test('the about panel opens, expands a section, and closes on Escape', async ({ 
   await expect(page.locator('[data-about]')).toHaveAttribute('aria-expanded', 'false')
 })
 
+test('the about panel carries no source link of its own', async ({ page }) => {
+  await ready(page)
+  await page.locator('[data-about]').click()
+  const panel = page.locator('[data-panel="About"]')
+  await expect(panel).toBeVisible()
+  await expect(panel.locator('a')).toHaveCount(0)
+
+  // The toolbar is the one route to the repository.
+  await expect(page.locator('[data-toolbar] [data-source]')).toHaveCount(1)
+})
+
+test('an open panel hides the hover readout they would otherwise overlap', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('[data-unlock]').click()
+  await page.mouse.move(700, 450)
+
+  const label = page.locator('[data-hover-label]')
+  await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
+  await page.waitForTimeout(1500)
+
+  await page.locator('[data-about]').click()
+  await expect
+    .poll(async () => Number(await label.evaluate((el) => (el as HTMLElement).style.opacity)), {
+      timeout: 5000,
+    })
+    .toBeLessThan(0.05)
+
+  await page.keyboard.press('Escape')
+  await expect
+    .poll(async () => Number(await label.evaluate((el) => (el as HTMLElement).style.opacity)), {
+      timeout: 5000,
+    })
+    .toBeGreaterThan(0.9)
+})
+
 test('only one panel is open at a time', async ({ page }) => {
   await ready(page)
   await page.locator('[data-about]').click()

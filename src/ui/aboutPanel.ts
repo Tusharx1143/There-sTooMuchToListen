@@ -1,5 +1,4 @@
 import { Panel } from './panel'
-import { REPO_URL } from './toolbar'
 
 const CHEVRON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
@@ -16,15 +15,6 @@ function paragraphs(...texts: string[]): HTMLElement {
     wrap.appendChild(p)
   }
   return wrap
-}
-
-function link(href: string, text: string): HTMLAnchorElement {
-  const a = document.createElement('a')
-  a.href = href
-  a.textContent = text
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  return a
 }
 
 /**
@@ -134,6 +124,8 @@ export class AboutPanel {
       },
       {
         title: 'Data & credits',
+        // No source link here on purpose: the toolbar carries its own GitHub
+        // button, and one route to the repository is enough.
         body: () => {
           const wrap = paragraphs(
             'Previews, cover art and metadata are harvested from the iTunes ' +
@@ -145,9 +137,6 @@ export class AboutPanel {
             p.textContent = `Catalogue harvested ${new Date(harvestedAt).toLocaleDateString()}.`
             wrap.appendChild(p)
           }
-          const p = document.createElement('p')
-          p.append(link(REPO_URL, 'Source code on GitHub'))
-          wrap.appendChild(p)
           return wrap
         },
       },

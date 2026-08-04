@@ -124,4 +124,12 @@ describe('AboutPanel', () => {
     new AboutPanel(root)
     expect(root.textContent).not.toContain('Catalogue harvested')
   })
+
+  /** The toolbar carries the GitHub button; one route to the repo is enough. */
+  it('carries no source link of its own', () => {
+    const root = document.createElement('div')
+    new AboutPanel(root, '2026-01-15T00:00:00.000Z')
+    expect(root.querySelector('a')).toBeNull()
+    expect(root.textContent).not.toContain('GitHub')
+  })
 })

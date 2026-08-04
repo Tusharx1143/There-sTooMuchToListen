@@ -26,6 +26,7 @@ export class HoverLabel {
 
   private song: Song | null = null
   private pinnedId: string | null = null
+  private hidden = false
   private opacity = 0
   private at: Point | null = null
   private flipped = false
@@ -65,11 +66,19 @@ export class HoverLabel {
   }
 
   /**
+   * Hides the readout outright. The label is positioned over the atlas and an
+   * open panel occupies the same right-hand space, so the two collide.
+   */
+  setHidden(on: boolean): void {
+    this.hidden = on
+  }
+
+  /**
    * Called every frame. `speedScale` is the lens's travel speed, 0 parked to 1
    * at the ceiling — the label is only legible when it is near 0.
    */
   update(centre: Point, speedScale: number, viewport: { w: number; h: number }): void {
-    const wants = this.song !== null && this.song.id !== this.pinnedId
+    const wants = !this.hidden && this.song !== null && this.song.id !== this.pinnedId
     const target = wants ? 1 - Math.min(1, speedScale / FADE_AT) : 0
 
     this.opacity += (target - this.opacity) * FOLLOW
