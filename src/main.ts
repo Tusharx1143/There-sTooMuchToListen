@@ -11,7 +11,12 @@ import { NowPlayingCard } from './ui/nowPlaying'
 import { Minimap } from './ui/minimap'
 import { SearchBox, buildTargets } from './ui/search'
 import { showStaleNotice } from './ui/staleNotice'
-import { VolumeControl } from './ui/volume'
+import { SettingsStore } from './state/settings'
+import { ThemeController } from './state/theme'
+import { Toolbar } from './ui/toolbar'
+import { AboutPanel } from './ui/aboutPanel'
+import { SettingsPanel } from './ui/settingsPanel'
+import { closeAllPanels } from './ui/panel'
 import { Momentum } from './render/momentum'
 
 async function boot(): Promise<void> {
@@ -26,10 +31,22 @@ async function boot(): Promise<void> {
     manifest.genres.map((g) => g.id),
   )
 
+  const settings = new SettingsStore()
+  const theme = new ThemeController(settings)
+
   const store = new CellStore()
   const images = new ImageCache()
-  const renderer = new AtlasRenderer(canvas, layout, store, images)
+  const renderer = new AtlasRenderer(
+    canvas,
+    layout,
+    store,
+    images,
+    () => document.createElement('canvas'),
+    settings,
+  )
   const audio = new AudioEngine()
+
+  renderer.setPalette(theme.palette)
 
   const genreLabels = new Map(manifest.genres.map((g) => [g.id, g.label]))
   const hud = new AxisHud(root, layout, genreLabels)
@@ -44,7 +61,14 @@ async function boot(): Promise<void> {
     renderer.panBy(world.x - window.innerWidth / 2, world.y - window.innerHeight / 2)
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
   })
+  minimap.setPalette(theme.palette)
   minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+
+  // Both canvases carry their own colours, so the theme has to reach each.
+  theme.onChange(() => {
+    renderer.setPalette(theme.palette)
+    minimap.setPalette(theme.palette)
+  })
 
   new SearchBox(root, buildTargets(layout, genreLabels), (t) => {
     const centre =
@@ -57,7 +81,19 @@ async function boot(): Promise<void> {
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
   })
 
-  new VolumeControl(root, audio)
+  const about = new AboutPanel(root, manifest.harvestedAt)
+  const settingsPanel = new SettingsPanel(root, settings, audio)
+
+  const toolbar = new Toolbar(root, settings, theme, {
+    onAbout: () => about.panel.toggle(),
+    onSettings: () => settingsPanel.panel.toggle(),
+  })
+  about.panel.onChange((open) => toolbar.setExpanded('about', open))
+  settingsPanel.panel.onChange((open) => toolbar.setExpanded('settings', open))
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAllPanels()
+  })
 
   renderer.failedSongs = audio.failed
   audio.onFailure(() => renderer.invalidateField())
@@ -72,6 +108,10 @@ async function boot(): Promise<void> {
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
 
+  // Reaching back into the atlas dismisses whatever is open, the same way
+  // clicking outside a dialog would.
+  canvas.addEventListener('pointerdown', () => closeAllPanels())
+
   const playAt = (x: number, y: number): void => {
     const hex = renderer.hoverAt(x, y)
     const song = hex ? songAt(hex, layout, store) : null
@@ -83,6 +123,12 @@ async function boot(): Promise<void> {
 
   const syncMinimap = (): void =>
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+
+  // Tile size rewrites every world coordinate, so the minimap's viewport
+  // rectangle is stale until it is told.
+  settings.onChange((_s, changed) => {
+    if (changed === 'tileSize') syncMinimap()
+  })
 
   const momentum = new Momentum((dx, dy) => {
     renderer.panBy(dx, dy)

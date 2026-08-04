@@ -19,7 +19,14 @@ export const LENS_TAU_MS = 90
 export const BRIGHT_MIN = 0.7
 export const BRIGHT_POW = 2
 
-export type Lens = { cx: number; cy: number; radius: number; k: number }
+export type Lens = {
+  cx: number
+  cy: number
+  radius: number
+  k: number
+  /** Brightness floor of the undistorted field, from user settings. */
+  brightMin: number
+}
 
 export type TileTransform = {
   x: number
@@ -33,8 +40,13 @@ export type TileTransform = {
   brightness: number
 }
 
-export function makeLens(cx: number, cy: number): Lens {
-  return { cx, cy, radius: LENS_RADIUS, k: LENS_K }
+export function makeLens(
+  cx: number,
+  cy: number,
+  k: number = LENS_K,
+  brightMin: number = BRIGHT_MIN,
+): Lens {
+  return { cx, cy, radius: LENS_RADIUS, k, brightMin }
 }
 
 /** Sarkar-Brown radial magnification: f(d). Identity at and beyond the edge. */
@@ -63,7 +75,7 @@ export function tangentialScale(d: number, lens: Lens): number {
 
 export function brightness(d: number, lens: Lens): number {
   const u = d >= lens.radius ? 1 : d / lens.radius
-  return BRIGHT_MIN + (1 - BRIGHT_MIN) * Math.pow(1 - u, BRIGHT_POW)
+  return lens.brightMin + (1 - lens.brightMin) * Math.pow(1 - u, BRIGHT_POW)
 }
 
 export function transformTile(p: Point, lens: Lens): TileTransform {

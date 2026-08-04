@@ -13,6 +13,12 @@ export class AtlasLayout {
   readonly cols: number
   readonly rows: number
 
+  /**
+   * Tile size in CSS pixels. Adjustable at runtime from settings, so every
+   * pixel-space derivation here reads it rather than the HEX_SIZE default.
+   */
+  hexSize: number = HEX_SIZE
+
   private readonly countryIndex: Map<string, number>
   private readonly genreIndex: Map<GenreId, number>
 
@@ -27,11 +33,11 @@ export class AtlasLayout {
 
   /** Total atlas size in world pixels, used by the minimap and pan clamping. */
   get widthPx(): number {
-    return Math.sqrt(3) * HEX_SIZE * (this.cols + 0.5)
+    return Math.sqrt(3) * this.hexSize * (this.cols + 0.5)
   }
 
   get heightPx(): number {
-    return 1.5 * HEX_SIZE * (this.rows + 1)
+    return 1.5 * this.hexSize * (this.rows + 1)
   }
 
   slotAt(o: Offset): Slot | null {
@@ -65,6 +71,7 @@ export class AtlasLayout {
         col: origin.col + Math.floor(CELL_COLS / 2),
         row: origin.row + Math.floor(CELL_ROWS / 2),
       }),
+      this.hexSize,
     )
   }
 }

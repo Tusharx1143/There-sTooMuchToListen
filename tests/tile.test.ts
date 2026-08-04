@@ -37,9 +37,9 @@ function fakeCtx(): { ctx: CanvasRenderingContext2D; calls: string[] } {
 function opts(over: Partial<TileOpts> = {}): TileOpts {
   return {
     x: 100, y: 100, size: 11.28,
-    angle: 0, radial: 1, tangential: 1, alpha: 1,
+    angle: 0, radial: 1, tangential: 1, alpha: 1, wash: null,
     image: null, colors: ['#111111', '#222222'],
-    highlighted: false, dim: false,
+    highlighted: false, dim: false, highlightColor: '#ffffff',
     ...over,
   }
 }

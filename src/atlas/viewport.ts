@@ -1,4 +1,4 @@
-import { axialToOffset, pixelToAxial, HEX_SIZE, type Point } from './hex'
+import { axialToOffset, pixelToAxial, type Point } from './hex'
 import { AtlasLayout, CELL_COLS, CELL_ROWS } from './layout'
 import { cellKey } from '../types'
 
@@ -14,7 +14,7 @@ const SLACK = 1
 export function visibleOffsets(
   view: Rect,
   layout: AtlasLayout,
-  size: number = HEX_SIZE,
+  size: number = layout.hexSize,
 ): OffsetRange {
   const corners: Point[] = [
     { x: view.x, y: view.y },
@@ -48,7 +48,7 @@ export function requiredCellKeys(
   view: Rect,
   layout: AtlasLayout,
   ring: number = 1,
-  size: number = HEX_SIZE,
+  size: number = layout.hexSize,
 ): string[] {
   const range = visibleOffsets(view, layout, size)
 

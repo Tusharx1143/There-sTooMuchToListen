@@ -4,9 +4,9 @@
  * tile gets anywhere inside the lens — or the rim would drop to flat colour
  * while the undistorted field around it carries art, and the seam shows.
  */
-export const ART_MIN_PX = 14
+export const ART_MIN_PX = 11
 /** Below this, skip the hex path entirely and draw a bare rect. */
-export const SOLID_MIN_PX = 6
+export const SOLID_MIN_PX = 5
 export const TILE_GAP = 0.94
 
 export type TileTier = 'art' | 'solid' | 'speck'
@@ -30,12 +30,35 @@ export type TileOpts = {
   angle: number
   radial: number
   tangential: number
+  /** How lit this tile is, 0..1. 1 is the focal tile at the lens centre. */
   alpha: number
+  /**
+   * Set on light themes: recede by washing the tile with this colour rather
+   * than by lowering alpha. Fading toward black on a pale ground reads as
+   * emphasis, which is the opposite of what a dimmed tile should say.
+   */
+  wash: string | null
   image: CanvasImageSource | null
   colors: [string, string]
   highlighted: boolean
   /** Failed preview — rendered visibly inert. */
   dim: boolean
+  /** Outline colour for the focal tile. */
+  highlightColor: string
+}
+
+/** Paints the light-theme recede wash. A no-op on dark themes. */
+function washOver(
+  ctx: CanvasRenderingContext2D,
+  o: TileOpts,
+  amount: number,
+  s: number,
+): void {
+  if (amount <= 0 || o.wash === null) return
+  ctx.globalAlpha = amount
+  ctx.fillStyle = o.wash
+  ctx.fillRect(-s, -s, s * 2, s * 2)
+  ctx.globalAlpha = 1
 }
 
 /** Pointy-top hexagon path centred on (cx, cy). */
@@ -55,8 +78,12 @@ export function drawTile(ctx: CanvasRenderingContext2D, o: TileOpts): void {
   const tier = tileTier(o.size * o.radial)
   const s = o.size
 
+  // Two ways to recede, one knob. Alpha lets the black ground through; wash
+  // paints the pale ground back over the top at the same strength.
+  const washAmount = o.wash === null ? 0 : 1 - o.alpha
+
   ctx.save()
-  ctx.globalAlpha = o.alpha
+  ctx.globalAlpha = o.wash === null ? o.alpha : 1
   ctx.translate(o.x, o.y)
 
   // Everything outside the lens comes through at scale 1; skipping the
@@ -69,6 +96,7 @@ export function drawTile(ctx: CanvasRenderingContext2D, o: TileOpts): void {
   if (tier === 'speck') {
     ctx.fillStyle = o.colors[0]
     ctx.fillRect(-s, -s, s * 2, s * 2)
+    washOver(ctx, o, washAmount, s)
     ctx.restore()
     return
   }
@@ -77,6 +105,13 @@ export function drawTile(ctx: CanvasRenderingContext2D, o: TileOpts): void {
     hexPath(ctx, 0, 0, s)
     ctx.fillStyle = o.colors[0]
     ctx.fill()
+    if (washAmount > 0) {
+      ctx.save()
+      hexPath(ctx, 0, 0, s)
+      ctx.clip()
+      washOver(ctx, o, washAmount, s)
+      ctx.restore()
+    }
     ctx.restore()
     return
   }
@@ -102,11 +137,13 @@ export function drawTile(ctx: CanvasRenderingContext2D, o: TileOpts): void {
     ctx.fillRect(-s, -s, s * 2, s * 2)
   }
 
+  washOver(ctx, o, washAmount, s)
+
   ctx.restore()
 
   if (o.highlighted) {
     hexPath(ctx, 0, 0, s)
-    ctx.strokeStyle = '#ffffff'
+    ctx.strokeStyle = o.highlightColor
     // Undo the tile's own scaling so the outline keeps a constant screen width.
     ctx.lineWidth = 2 / Math.max(o.radial, o.tangential)
     ctx.stroke()

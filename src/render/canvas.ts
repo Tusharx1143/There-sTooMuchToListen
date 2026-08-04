@@ -1,15 +1,16 @@
-import { axialToPixel, offsetToAxial, pixelToAxial, axialToOffset, HEX_SIZE, type Offset, type Point } from '../atlas/hex'
+import { axialToPixel, offsetToAxial, pixelToAxial, axialToOffset, type Offset, type Point } from '../atlas/hex'
 import { AtlasLayout, CELL_COLS } from '../atlas/layout'
 import { clampView, requiredCellKeys, visibleOffsets } from '../atlas/viewport'
 import type { CellStore } from '../data/loader'
 import { ImageCache, fallbackColors, speckleColor } from './imageCache'
 import { drawTile, tileTier, TILE_GAP } from './tile'
-import { easeCentre, makeLens, transformTile, unlensPoint, BRIGHT_MIN, type Lens } from './lens'
+import { easeCentre, makeLens, transformTile, unlensPoint, type Lens } from './lens'
+import { SettingsStore } from '../state/settings'
+import { PALETTES, type Palette } from '../state/theme'
 import { cellKey, type Song } from '../types'
 
 /** Under this much distance left to travel, the lens counts as parked. */
 const SETTLE_PX = 0.25
-const BG = '#07070c'
 
 /** Pure lookup: which song lives on this hex, if its cell is loaded? */
 export function songAt(o: Offset, layout: AtlasLayout, store: CellStore): Song | null {
@@ -50,16 +51,21 @@ export class AtlasRenderer {
   private fieldKey = ''
   private fieldStale = true
 
+  /** Repainted colours, swapped wholesale when the theme changes. */
+  palette: Palette = PALETTES.dark
+
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly layout: AtlasLayout,
     private readonly store: CellStore,
     private readonly images: ImageCache,
     makeCanvas: () => HTMLCanvasElement = () => document.createElement('canvas'),
+    private readonly settings: SettingsStore = new SettingsStore(),
   ) {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('2d canvas context unavailable')
     this.ctx = ctx
+    this.layout.hexSize = this.settings.hexSize
 
     // A missing offscreen context is survivable: we just draw every tile live.
     this.field = makeCanvas()
@@ -73,10 +79,49 @@ export class AtlasRenderer {
       if (this.settled) this.updateFocal()
     })
     this.images.onLoad(() => this.invalidateField())
+
+    this.settings.onChange((_s, changed) => {
+      // Tile size rewrites every world coordinate, so the view has to be
+      // re-clamped against the atlas's new dimensions before the next frame.
+      if (changed === 'tileSize') this.setHexSize(this.settings.hexSize)
+      else if (changed === 'lens' || changed === 'fieldLight') this.invalidateField()
+    })
+
     this.resize()
 
     this.lensTarget = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
     this.centre = { ...this.lensTarget }
+  }
+
+  /** Swaps the render palette and repaints everything in the new colours. */
+  setPalette(p: Palette): void {
+    this.palette = p
+    this.invalidateField()
+  }
+
+  /**
+   * Keeps the world point under the lens centre fixed across the resize, so
+   * changing tile size zooms about what you were looking at rather than
+   * throwing you to a different corner of the atlas.
+   */
+  private setHexSize(next: number): void {
+    const previous = this.layout.hexSize
+    if (next === previous) return
+
+    const anchor = { x: this.centre.x + this.view.x, y: this.centre.y + this.view.y }
+    const scale = next / previous
+    this.layout.hexSize = next
+
+    this.view = clampView(
+      {
+        x: anchor.x * scale - this.centre.x,
+        y: anchor.y * scale - this.centre.y,
+        w: window.innerWidth,
+        h: window.innerHeight,
+      },
+      this.layout,
+    )
+    this.invalidateField()
   }
 
   get lensCentre(): Point {
@@ -99,7 +144,12 @@ export class AtlasRenderer {
   }
 
   private get lens(): Lens {
-    return makeLens(this.centre.x, this.centre.y)
+    return makeLens(
+      this.centre.x,
+      this.centre.y,
+      this.settings.lensK,
+      this.settings.current.fieldLight,
+    )
   }
 
   /** Advances the eased lens. Called by the frame loop; tests drive it directly. */
@@ -128,7 +178,7 @@ export class AtlasRenderer {
    */
   private updateFocal(): void {
     const world = { x: this.centre.x + this.view.x, y: this.centre.y + this.view.y }
-    const o = axialToOffset(pixelToAxial(world))
+    const o = axialToOffset(pixelToAxial(world, this.layout.hexSize))
     const next = this.layout.slotAt(o) ? o : null
     const song = next ? songAt(next, this.layout, this.store) : null
     const songId = song?.id ?? null
@@ -177,7 +227,7 @@ export class AtlasRenderer {
   hoverAt(clientX: number, clientY: number): Offset | null {
     const flat = unlensPoint({ x: clientX, y: clientY }, this.lens)
     const world = { x: flat.x + this.view.x, y: flat.y + this.view.y }
-    const o = axialToOffset(pixelToAxial(world))
+    const o = axialToOffset(pixelToAxial(world, this.layout.hexSize))
     return this.layout.slotAt(o) ? o : null
   }
 
@@ -225,8 +275,8 @@ export class AtlasRenderer {
       requiredCellKeys({ x: this.view.x, y: this.view.y, w, h }, this.layout),
     )
 
-    const size = HEX_SIZE * TILE_GAP
-    const focal = axialToOffset(pixelToAxial(focusWorld))
+    const size = this.layout.hexSize * TILE_GAP
+    const focal = axialToOffset(pixelToAxial(focusWorld, this.layout.hexSize))
     const R = lens.radius
 
     if (this.paintField(w, h)) {
@@ -237,11 +287,11 @@ export class AtlasRenderer {
       this.ctx.beginPath()
       this.ctx.arc(lens.cx, lens.cy, R, 0, Math.PI * 2)
       this.ctx.clip()
-      this.ctx.fillStyle = BG
+      this.ctx.fillStyle = this.palette.bg
       this.ctx.fillRect(lens.cx - R, lens.cy - R, R * 2, R * 2)
       this.ctx.restore()
     } else {
-      this.ctx.fillStyle = BG
+      this.ctx.fillStyle = this.palette.bg
       this.ctx.fillRect(0, 0, w, h)
       this.paintTiles(visibleOffsets({ x: this.view.x, y: this.view.y, w, h }, this.layout),
         lens, size, focal, w, h, false)
@@ -272,7 +322,7 @@ export class AtlasRenderer {
 
     for (let row = range.rowMin; row <= range.rowMax; row++) {
       for (let col = range.colMin; col <= range.colMax; col++) {
-        const p = axialToPixel(offsetToAxial({ col, row }))
+        const p = axialToPixel(offsetToAxial({ col, row }), this.layout.hexSize)
         const sx = p.x - this.view.x
         const sy = p.y - this.view.y
 
@@ -297,11 +347,15 @@ export class AtlasRenderer {
           radial: t.radial,
           tangential: t.tangential,
           alpha: t.brightness,
+          wash: this.palette.recede === 'wash' ? this.palette.bg : null,
           // Only the art tier may touch the cache — get() starts a fetch.
           image: tier === 'art' && song ? this.images.get(song.art) : null,
-          colors: song ? fallbackColors(song.id) : [speckleColor(col, row), '#0b0b12'],
+          colors: song
+            ? fallbackColors(song.id)
+            : [speckleColor(col, row, this.palette.speckleLightness), this.palette.gap],
           highlighted: col === focal.col && row === focal.row,
           dim: song !== null && this.failedSongs.has(song.id),
+          highlightColor: this.palette.highlight,
         })
       }
     }
@@ -328,10 +382,10 @@ export class AtlasRenderer {
       field.height = Math.floor(h * dpr)
     }
     fctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    fctx.fillStyle = BG
+    fctx.fillStyle = this.palette.bg
     fctx.fillRect(0, 0, w, h)
 
-    const size = HEX_SIZE * TILE_GAP
+    const size = this.layout.hexSize * TILE_GAP
     // Out here every tile is at scale 1, so the tier is the same for all of
     // them and the lookup lifts out of the loop.
     const tier = tileTier(size)
@@ -339,7 +393,7 @@ export class AtlasRenderer {
 
     for (let row = range.rowMin; row <= range.rowMax; row++) {
       for (let col = range.colMin; col <= range.colMax; col++) {
-        const p = axialToPixel(offsetToAxial({ col, row }))
+        const p = axialToPixel(offsetToAxial({ col, row }), this.layout.hexSize)
         const song = songAt({ col, row }, this.layout, this.store)
 
         drawTile(fctx, {
@@ -349,11 +403,15 @@ export class AtlasRenderer {
           angle: 0,
           radial: 1,
           tangential: 1,
-          alpha: BRIGHT_MIN,
+          alpha: this.settings.current.fieldLight,
+          wash: this.palette.recede === 'wash' ? this.palette.bg : null,
           image: tier === 'art' && song ? this.images.get(song.art) : null,
-          colors: song ? fallbackColors(song.id) : [speckleColor(col, row), '#0b0b12'],
+          colors: song
+            ? fallbackColors(song.id)
+            : [speckleColor(col, row, this.palette.speckleLightness), this.palette.gap],
           highlighted: false,
           dim: song !== null && this.failedSongs.has(song.id),
+          highlightColor: this.palette.highlight,
         })
       }
     }

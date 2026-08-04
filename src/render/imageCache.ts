@@ -5,7 +5,7 @@
  * a single field repaint evicts entries it is still drawing and re-requests
  * them on the next one, forever.
  */
-export const IMAGE_CACHE_CAPACITY = 1000
+export const IMAGE_CACHE_CAPACITY = 1400
 
 /**
  * Covers are harvested at 600x600. Decoded, that is 1.4 MB each — a screenful
@@ -115,13 +115,13 @@ function rescale(img: HTMLImageElement): CanvasImageSource {
  * Colour for a hex whose cell has not arrived yet, and for the gaps past the
  * end of a short cell. Keeps the grid looking populated while the covers load.
  */
-export function speckleColor(col: number, row: number): string {
+export function speckleColor(col: number, row: number, lightness: number = 22): string {
   // Distinct multipliers per axis, so (2,11) and (11,2) don't land on the same
   // hue and stripe the field diagonally. Integer maths only — this runs for
   // every tile of every frame, and a template string per tile would show up.
   let h = Math.imul(col, 0x27d4eb2d) ^ Math.imul(row + 0x165667b1, 0x85ebca6b)
   h ^= h >>> 15
-  return `hsl(${Math.abs(h) % 360}, 38%, 22%)`
+  return `hsl(${Math.abs(h) % 360}, 38%, ${lightness}%)`
 }
 
 /** Deterministic two-tone gradient so a missing cover never shows a broken box. */
