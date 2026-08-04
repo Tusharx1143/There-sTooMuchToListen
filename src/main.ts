@@ -142,6 +142,7 @@ async function boot(): Promise<void> {
   canvas.addEventListener('pointerdown', () => closeAllPanels())
 
   const playAt = (x: number, y: number): void => {
+    if (renderer.introPlaying) return
     const hex = renderer.hoverAt(x, y)
     const song = hex ? songAt(hex, layout, store) : null
     hud.update(hex)
@@ -192,6 +193,10 @@ async function boot(): Promise<void> {
         syncMinimap()
       },
       onClick: (x, y) => {
+        // The reveal is still moving the world; a tile picked now is not the
+        // tile that ends up under the cursor. The reference ignores selection
+        // during its intro for the same reason.
+        if (renderer.introPlaying) return
         const hex = renderer.hoverAt(x, y)
         const song = hex ? songAt(hex, layout, store) : null
         if (!song) return
@@ -215,7 +220,7 @@ async function boot(): Promise<void> {
     canvas.addEventListener('pointerdown', () => momentum.stop())
   }
 
-  showUnlockOverlay(root, () => {})
+  showUnlockOverlay(root, () => renderer.playIntro())
 }
 
 void boot().catch((err: unknown) => {

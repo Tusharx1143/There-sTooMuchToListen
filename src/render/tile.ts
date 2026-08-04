@@ -45,6 +45,48 @@ export type TileOpts = {
   dim: boolean
   /** Outline colour for the focal tile. */
   highlightColor: string
+  /**
+   * Relief strength, 0 for a flat tile. The `depth` preset's stand-in: the
+   * reference raymarches a height field built from its Voronoi edge buffer and
+   * lights it per pixel, which needs a WebGL post pass we do not have. A
+   * directional wash plus a lit rim reads as the same embossed surface at a
+   * fraction of the cost.
+   */
+  relief: number
+}
+
+/**
+ * Fixed key light, upper-left. The reference's light follows the camera, but
+ * ours would then depend on the lens position — and the undistorted field is
+ * cached precisely because it does not. A static light keeps that cache.
+ */
+const LIGHT_X = -Math.SQRT1_2
+const LIGHT_Y = -Math.SQRT1_2
+
+/**
+ * Shades the tile as a lit surface: a gradient across the light axis, then a
+ * rim that catches the light on the near edge and falls into shadow opposite.
+ * Called inside the caller's hex clip.
+ */
+function reliefOver(ctx: CanvasRenderingContext2D, strength: number, s: number): void {
+  if (strength <= 0) return
+
+  const g = ctx.createLinearGradient(-LIGHT_X * s, -LIGHT_Y * s, LIGHT_X * s, LIGHT_Y * s)
+  g.addColorStop(0, `rgba(0,0,0,${(0.5 * strength).toFixed(3)})`)
+  g.addColorStop(0.55, 'rgba(0,0,0,0)')
+  g.addColorStop(1, `rgba(255,255,255,${(0.3 * strength).toFixed(3)})`)
+  ctx.fillStyle = g
+  ctx.fillRect(-s, -s, s * 2, s * 2)
+
+  // The rim is what sells it: a height field peaks at the cell edge, so the
+  // edge is the brightest part of the surface.
+  ctx.lineWidth = Math.max(1, s * 0.09)
+  ctx.strokeStyle = `rgba(255,255,255,${(0.22 * strength).toFixed(3)})`
+  hexPath(ctx, -s * 0.03, -s * 0.03, s)
+  ctx.stroke()
+  ctx.strokeStyle = `rgba(0,0,0,${(0.3 * strength).toFixed(3)})`
+  hexPath(ctx, s * 0.03, s * 0.03, s)
+  ctx.stroke()
 }
 
 /** Paints the light-theme recede wash. A no-op on dark themes. */
@@ -105,10 +147,11 @@ export function drawTile(ctx: CanvasRenderingContext2D, o: TileOpts): void {
     hexPath(ctx, 0, 0, s)
     ctx.fillStyle = o.colors[0]
     ctx.fill()
-    if (washAmount > 0) {
+    if (washAmount > 0 || o.relief > 0) {
       ctx.save()
       hexPath(ctx, 0, 0, s)
       ctx.clip()
+      reliefOver(ctx, o.relief, s)
       washOver(ctx, o, washAmount, s)
       ctx.restore()
     }
@@ -137,6 +180,7 @@ export function drawTile(ctx: CanvasRenderingContext2D, o: TileOpts): void {
     ctx.fillRect(-s, -s, s * 2, s * 2)
   }
 
+  reliefOver(ctx, o.relief, s)
   washOver(ctx, o, washAmount, s)
 
   ctx.restore()

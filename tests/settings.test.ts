@@ -68,6 +68,20 @@ describe('SettingsStore', () => {
     expect(store.hexSize).toBe(HEX_SIZE_BY_TILE.small)
   })
 
+  /**
+   * `minimal` is the reference's own default, and its whole preset is
+   * `{ cells, media }` — the engine with post-processing off. Ours matches by
+   * carrying no relief at all.
+   */
+  it('defaults to the minimal preset, which adds nothing', () => {
+    expect(DEFAULTS.preset).toBe('minimal')
+    expect(new SettingsStore({ ...DEFAULTS }).relief).toBe(0)
+  })
+
+  it('gives the depth preset relief to draw', () => {
+    expect(new SettingsStore({ ...DEFAULTS, preset: 'depth' }).relief).toBeGreaterThan(0)
+  })
+
   it('notifies listeners with the key that changed', () => {
     const store = new SettingsStore({ ...DEFAULTS })
     const seen = vi.fn()

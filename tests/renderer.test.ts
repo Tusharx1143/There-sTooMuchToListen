@@ -4,6 +4,12 @@ import { CellStore } from '../src/data/loader'
 import { requiredCellKeys } from '../src/atlas/viewport'
 import { songAt, AtlasRenderer } from '../src/render/canvas'
 import { ImageCache, IMAGE_CACHE_CAPACITY } from '../src/render/imageCache'
+import { DEFAULTS, HEX_SIZE_BY_TILE, SettingsStore } from '../src/state/settings'
+
+// SettingsStore persists on every set, and renderers built without an explicit
+// store read that back — one test choosing a tile size would otherwise resize
+// the atlas for every test after it.
+beforeEach(() => localStorage.clear())
 import { axialToPixel, offsetToAxial, type Offset } from '../src/atlas/hex'
 import { makeLens, transformTile } from '../src/render/lens'
 import type { Song } from '../src/types'
@@ -191,6 +197,71 @@ describe('AtlasRenderer lens', () => {
     r.step(5000)
     expect(seen.length).toBeGreaterThan(0)
     expect(r.focal).not.toBeNull()
+  })
+})
+
+describe('intro reveal', () => {
+  it('is not playing until it is asked for', () => {
+    const r = makeRenderer()
+    expect(r.introPlaying).toBe(false)
+  })
+
+  /**
+   * The reference opens on a coarse lattice and swaps to the dense one; ours
+   * tweens the tile size down, so the field floods outward with covers.
+   */
+  it('starts on large tiles and settles on the configured size', () => {
+    const layout = new AtlasLayout(['us', 'br'], [14, 21])
+    const settings = new SettingsStore({ ...DEFAULTS, tileSize: 'medium' })
+    const target = settings.hexSize
+    const r = new AtlasRenderer(
+      stubCanvas(), layout, emptyStore(), stubImages(), stubCanvas, settings,
+    )
+
+    r.playIntro(1000)
+    expect(r.introPlaying).toBe(true)
+    expect(layout.hexSize).toBeGreaterThan(target)
+
+    r.step(100)
+    const midway = layout.hexSize
+    expect(midway).toBeLessThan(HEX_SIZE_BY_TILE.medium * 3.2)
+    expect(midway).toBeGreaterThan(target)
+
+    r.step(2000)
+    expect(r.introPlaying).toBe(false)
+    // Lands exactly on the setting, not on the tween's last sample.
+    expect(layout.hexSize).toBe(target)
+  })
+
+  it('shrinks monotonically', () => {
+    const layout = new AtlasLayout(['us', 'br'], [14, 21])
+    const r = new AtlasRenderer(
+      stubCanvas(), layout, emptyStore(), stubImages(), stubCanvas,
+      new SettingsStore({ ...DEFAULTS }),
+    )
+
+    r.playIntro(1000)
+    let previous = layout.hexSize
+    for (let i = 0; i < 20; i++) {
+      r.step(50)
+      expect(layout.hexSize).toBeLessThanOrEqual(previous)
+      previous = layout.hexSize
+    }
+  })
+
+  it('lands on the size chosen mid-intro', () => {
+    const layout = new AtlasLayout(['us', 'br'], [14, 21])
+    const settings = new SettingsStore({ ...DEFAULTS, tileSize: 'medium' })
+    const r = new AtlasRenderer(
+      stubCanvas(), layout, emptyStore(), stubImages(), stubCanvas, settings,
+    )
+
+    r.playIntro(1000)
+    r.step(200)
+    settings.set('tileSize', 'large')
+    r.step(2000)
+
+    expect(layout.hexSize).toBe(HEX_SIZE_BY_TILE.large)
   })
 })
 

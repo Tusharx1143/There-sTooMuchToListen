@@ -1,6 +1,12 @@
 import type { AudioEngine } from '../audio/engine'
 import { Panel } from './panel'
-import type { LensPreset, Settings, SettingsStore, TileSize } from '../state/settings'
+import type {
+  LensPreset,
+  RenderPreset,
+  Settings,
+  SettingsStore,
+  TileSize,
+} from '../state/settings'
 
 function group(title: string): HTMLElement {
   const el = document.createElement('div')
@@ -106,6 +112,11 @@ function toggle(
   return { el: wrap, sync }
 }
 
+const PRESET_OPTIONS: readonly { value: RenderPreset; label: string }[] = [
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'depth', label: 'Depth' },
+]
+
 const LENS_OPTIONS: readonly { value: LensPreset; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'subtle', label: 'Subtle' },
@@ -126,6 +137,7 @@ export class SettingsPanel {
 
     const s = (): Readonly<Settings> => settings.current
 
+    const preset = optionRow(PRESET_OPTIONS, () => s().preset, (v) => settings.set('preset', v))
     const lens = optionRow(LENS_OPTIONS, () => s().lens, (v) => settings.set('lens', v))
     const tiles = optionRow(TILE_OPTIONS, () => s().tileSize, (v) => settings.set('tileSize', v))
     const light = slider('Field light', 'data-field-light', () => s().fieldLight, (v) =>
@@ -146,6 +158,10 @@ export class SettingsPanel {
         void Promise.resolve(done).catch(() => fullscreen.sync())
       },
     )
+
+    // Preset leads, the way the reference orders its settings.
+    const presetGroup = group('Preset')
+    presetGroup.appendChild(preset.el)
 
     const lensGroup = group('Lens')
     lensGroup.appendChild(lens.el)
@@ -172,7 +188,9 @@ export class SettingsPanel {
     close.addEventListener('click', () => this.panel.hide())
     actions.appendChild(close)
 
-    this.panel.el.append(lensGroup, tileGroup, displayGroup, audioGroup, switches, actions)
+    this.panel.el.append(
+      presetGroup, lensGroup, tileGroup, displayGroup, audioGroup, switches, actions,
+    )
 
     // The audio engine is the one consumer that cannot read the store itself.
     audio.setVolume(s().volume)
@@ -180,7 +198,7 @@ export class SettingsPanel {
     settings.onChange((next, changed) => {
       if (changed === 'volume') audio.setVolume(next.volume)
       if (changed === 'muted') audio.setMuted(next.muted)
-      for (const c of [lens, tiles, light, volume, muted]) c.sync()
+      for (const c of [preset, lens, tiles, light, volume, muted]) c.sync()
     })
 
     document.addEventListener('fullscreenchange', () => fullscreen.sync())

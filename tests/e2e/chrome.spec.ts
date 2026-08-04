@@ -1,11 +1,22 @@
 import { test, expect, type Page } from '@playwright/test'
 
+/** The intro tween runs for INTRO_MS; clicks are ignored until it lands. */
+const INTRO_SETTLE_MS = 3200
+
 /** Past the unlock gate, with the atlas settled enough to interact with. */
 async function ready(page: Page): Promise<void> {
   await page.goto('/')
   await page.locator('[data-unlock]').click()
   await page.mouse.move(640, 400)
   await page.waitForTimeout(300)
+}
+
+/** As `ready`, but also past the intro reveal, so the world has stopped moving. */
+async function readySettled(page: Page, x = 700, y = 450): Promise<void> {
+  await page.goto('/')
+  await page.locator('[data-unlock]').click()
+  await page.mouse.move(x, y)
+  await page.waitForTimeout(INTRO_SETTLE_MS)
 }
 
 // The default theme is `system`, so the OS preference has to be pinned or the
@@ -57,13 +68,10 @@ test('the chrome carries no source link', async ({ page }) => {
 })
 
 test('an open panel hides the hover readout they would otherwise overlap', async ({ page }) => {
-  await page.goto('/')
-  await page.locator('[data-unlock]').click()
-  await page.mouse.move(700, 450)
+  await readySettled(page)
 
   const label = page.locator('[data-hover-label]')
   await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
-  await page.waitForTimeout(1500)
 
   await page.locator('[data-about]').click()
   await expect
@@ -163,9 +171,7 @@ test('volume and mute persist through the settings panel', async ({ page }) => {
 })
 
 test('the hover readout names the song under the lens once it parks', async ({ page }) => {
-  await page.goto('/')
-  await page.locator('[data-unlock]').click()
-  await page.mouse.move(700, 450)
+  await readySettled(page)
 
   const label = page.locator('[data-hover-label]')
   await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
@@ -178,13 +184,10 @@ test('the hover readout names the song under the lens once it parks', async ({ p
 
 /** The point of fading it: sweeping must not strobe a title per tile crossed. */
 test('the hover readout fades out while the lens travels', async ({ page }) => {
-  await page.goto('/')
-  await page.locator('[data-unlock]').click()
-  await page.mouse.move(700, 450)
+  await readySettled(page)
 
   const label = page.locator('[data-hover-label]')
   await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
-  await page.waitForTimeout(1500)
 
   await page.mouse.move(1250, 780)
   await page.waitForTimeout(80)
@@ -199,13 +202,10 @@ test('the hover readout fades out while the lens travels', async ({ page }) => {
 })
 
 test('pinning a song hands the readout to the now-playing card', async ({ page }) => {
-  await page.goto('/')
-  await page.locator('[data-unlock]').click()
-  await page.mouse.move(700, 450)
+  await readySettled(page)
 
   const label = page.locator('[data-hover-label]')
   await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
-  await page.waitForTimeout(1500)
 
   await page.mouse.click(700, 450)
   await expect(page.locator('[data-now-playing]')).toBeVisible()
@@ -221,13 +221,10 @@ test('pinning a song hands the readout to the now-playing card', async ({ page }
  * the readout for the whole pinned session left no discoverable way back.
  */
 test('the hover readout returns on other songs after one is pinned', async ({ page }) => {
-  await page.goto('/')
-  await page.locator('[data-unlock]').click()
-  await page.mouse.move(700, 450)
+  await readySettled(page)
 
   const label = page.locator('[data-hover-label]')
   await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
-  await page.waitForTimeout(1500)
 
   const pinnedTitle = await label.locator('h2').textContent()
   await page.mouse.click(700, 450)
@@ -241,6 +238,64 @@ test('the hover readout returns on other songs after one is pinned', async ({ pa
     })
     .toBeGreaterThan(0.9)
   expect(await label.locator('h2').textContent()).not.toBe(pinnedTitle)
+})
+
+test('the intro shows the headline and clears on start', async ({ page }) => {
+  await page.goto('/')
+  const overlay = page.locator('[data-unlock]')
+  await expect(overlay).toBeVisible()
+  await expect(overlay).toContainText('too much to listen to')
+
+  await page.locator('[data-unlock-start]').click()
+  await expect(overlay).toHaveCount(0)
+})
+
+/**
+ * The tween's maths is covered in the unit tests, which can read the layout
+ * directly. From out here the observable is that the atlas is still visibly
+ * rebuilding after the overlay clears, and that it does so without throwing.
+ */
+test('the intro reveal runs and settles without errors', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+
+  await page.goto('/')
+  await page.locator('[data-unlock-start]').click()
+
+  await page.waitForTimeout(150)
+  const early = await sampleCanvas(page)
+
+  await page.waitForTimeout(3200)
+  expect(await sampleCanvas(page)).not.toEqual(early)
+  expect(errors).toEqual([])
+})
+
+test('the depth preset changes what the atlas renders', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+
+  await ready(page)
+  await page.locator('[data-settings]').click()
+  await expect(page.locator('[data-option="minimal"]')).toHaveAttribute('aria-pressed', 'true')
+
+  const flat = await sampleCanvas(page)
+  await page.locator('[data-option="depth"]').click()
+  await expect(page.locator('[data-option="depth"]')).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForTimeout(600)
+
+  expect(await sampleCanvas(page)).not.toEqual(flat)
+  expect(errors).toEqual([])
+})
+
+test('the render preset survives a reload', async ({ page }) => {
+  await ready(page)
+  await page.locator('[data-settings]').click()
+  await page.locator('[data-option="depth"]').click()
+
+  await page.reload()
+  await page.locator('[data-unlock]').click()
+  await page.locator('[data-settings]').click()
+  await expect(page.locator('[data-option="depth"]')).toHaveAttribute('aria-pressed', 'true')
 })
 
 /** Average colour of a patch away from the lens, as [r, g, b]. */

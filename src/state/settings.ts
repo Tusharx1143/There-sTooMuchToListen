@@ -9,11 +9,24 @@
 
 const KEY = 'lta:prefs'
 
+/**
+ * Render treatment, after the reference's presets.
+ *
+ * `minimal` is theirs verbatim in spirit — their whole preset is
+ * `{ cells, media }` with no display overrides, i.e. the engine with
+ * post-processing off. `depth` is an approximation: theirs hangs a raymarched
+ * GLSL height-field pass off a Voronoi edge buffer, which needs a WebGL
+ * pipeline this renderer does not have, so ours shades each tile as a lit
+ * surface instead. Same intent, different mechanism.
+ */
+export type RenderPreset = 'minimal' | 'depth'
+
 export type LensPreset = 'off' | 'subtle' | 'strong'
 export type TileSize = 'small' | 'medium' | 'large'
 export type ThemeChoice = 'system' | 'light' | 'dark'
 
 export type Settings = {
+  preset: RenderPreset
   lens: LensPreset
   tileSize: TileSize
   /** 0..1, drives the undistorted field's brightness floor. */
@@ -24,6 +37,8 @@ export type Settings = {
 }
 
 export const DEFAULTS: Settings = {
+  // The reference defaults to minimal too.
+  preset: 'minimal',
   lens: 'strong',
   tileSize: 'medium',
   fieldLight: 0.7,
@@ -46,6 +61,20 @@ export const HEX_SIZE_BY_TILE: Record<TileSize, number> = {
   large: 76,
 }
 
+/** Relief strength per render preset. `minimal` means a flat surface. */
+export const RELIEF_BY_PRESET: Record<RenderPreset, number> = {
+  minimal: 0,
+  depth: 1,
+}
+
+/**
+ * Their fCenterForceBulgeStrength drops from 1.0 in preview to 0.5 in select.
+ * The same idea: relief eases off once a song is pinned, so the card's
+ * surroundings stay quiet.
+ */
+export const RELIEF_PINNED_FACTOR = 0.5
+
+const RENDER_PRESETS: readonly RenderPreset[] = ['minimal', 'depth']
 const LENS_PRESETS: readonly LensPreset[] = ['off', 'subtle', 'strong']
 const TILE_SIZES: readonly TileSize[] = ['small', 'medium', 'large']
 const THEMES: readonly ThemeChoice[] = ['system', 'light', 'dark']
@@ -64,6 +93,7 @@ export function loadSettings(): Settings {
     if (!raw) return { ...DEFAULTS }
     const p = JSON.parse(raw) as Partial<Settings>
     return {
+      preset: oneOf(p.preset, RENDER_PRESETS, DEFAULTS.preset),
       lens: oneOf(p.lens, LENS_PRESETS, DEFAULTS.lens),
       tileSize: oneOf(p.tileSize, TILE_SIZES, DEFAULTS.tileSize),
       fieldLight: clamp01(p.fieldLight, DEFAULTS.fieldLight),
@@ -102,6 +132,10 @@ export class SettingsStore {
 
   get hexSize(): number {
     return HEX_SIZE_BY_TILE[this.state.tileSize]
+  }
+
+  get relief(): number {
+    return RELIEF_BY_PRESET[this.state.preset]
   }
 
   onChange(cb: (s: Settings, changed: keyof Settings) => void): () => void {

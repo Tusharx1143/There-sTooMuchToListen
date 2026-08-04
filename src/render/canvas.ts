@@ -17,12 +17,27 @@ import {
   LENS_TAU_PINNED_MS,
   type Lens,
 } from './lens'
-import { SettingsStore } from '../state/settings'
+import { RELIEF_PINNED_FACTOR, SettingsStore } from '../state/settings'
 import { PALETTES, type Palette } from '../state/theme'
 import { cellKey, type Song } from '../types'
 
 /** Under this much distance left to travel, the lens counts as parked. */
 const SETTLE_PX = 0.25
+
+/**
+ * Intro reveal. The reference opens on a coarse lattice
+ * (targetCellSizeViewportPercentage 0.075) and swaps to the dense one, letting
+ * its force simulation settle the cells outward. We have no simulation, so the
+ * same effect is an explicit tween: tiles start this many times their final
+ * size and shrink into place, flooding the field with covers.
+ */
+export const INTRO_FROM_SCALE = 3.2
+export const INTRO_MS = 2600
+
+/** easeOutExpo, from the reference's MIN_LERP_EASING_TYPES — fast, then settles. */
+function easeOutExpo(t: number): number {
+  return t >= 1 ? 1 : 1 - 2 ** (-10 * t)
+}
 
 /** Pure lookup: which song lives on this hex, if its cell is loaded? */
 export function songAt(o: Offset, layout: AtlasLayout, store: CellStore): Song | null {
@@ -41,11 +56,22 @@ export class AtlasRenderer {
   /** Where the lens is heading. Pointer sets this; touch pins it to centre. */
   lensTarget: Point = { x: 0, y: 0 }
 
+  private pinnedState = false
+
   /**
    * True while a song is pinned. The lens travels slower and eases longer, so
    * moving the cursor toward the now-playing card does not drag the atlas.
    */
-  pinned = false
+  get pinned(): boolean {
+    return this.pinnedState
+  }
+
+  set pinned(on: boolean) {
+    if (this.pinnedState === on) return
+    this.pinnedState = on
+    // Relief eases off while pinned, and the cached field carries relief too.
+    this.invalidateField()
+  }
 
   private centre: Point = { x: 0, y: 0 }
   private focalOffset: Offset | null = null
@@ -55,6 +81,10 @@ export class AtlasRenderer {
 
   /** Smoothed travel speed, 0 parked to 1 at the ceiling. */
   private speed = 0
+
+  private introFrom = 0
+  private introElapsed = 0
+  private introMs = 0
   private hoverOffset: Offset | null = null
   private hoverSong: string | null = null
   private readonly hoverListeners = new Set<(o: Offset | null) => void>()
@@ -109,7 +139,9 @@ export class AtlasRenderer {
       // Tile size rewrites every world coordinate, so the view has to be
       // re-clamped against the atlas's new dimensions before the next frame.
       if (changed === 'tileSize') this.setHexSize(this.settings.hexSize)
-      else if (changed === 'lens' || changed === 'fieldLight') this.invalidateField()
+      else if (changed === 'lens' || changed === 'fieldLight' || changed === 'preset') {
+        this.invalidateField()
+      }
     })
 
     this.resize()
@@ -187,6 +219,11 @@ export class AtlasRenderer {
     return this.pinned ? LENS_MAX_SPEED_PINNED : LENS_MAX_SPEED_PX_PER_MS
   }
 
+  /** Relief strength for this frame, eased off while a song is pinned. */
+  private get relief(): number {
+    return this.settings.relief * (this.pinned ? RELIEF_PINNED_FACTOR : 1)
+  }
+
   private get lens(): Lens {
     return makeLens(
       this.centre.x,
@@ -196,8 +233,39 @@ export class AtlasRenderer {
     )
   }
 
+  /**
+   * Starts the opening reveal. Safe to call at any point; it takes the target
+   * size from settings, so changing tile size mid-intro still lands correctly.
+   */
+  playIntro(durationMs: number = INTRO_MS, fromScale: number = INTRO_FROM_SCALE): void {
+    this.introFrom = this.settings.hexSize * fromScale
+    this.introElapsed = 0
+    this.introMs = durationMs
+    this.setHexSize(this.introFrom)
+  }
+
+  get introPlaying(): boolean {
+    return this.introMs > 0
+  }
+
+  private advanceIntro(dtMs: number): void {
+    if (this.introMs <= 0) return
+
+    this.introElapsed += dtMs
+    const t = Math.min(1, this.introElapsed / this.introMs)
+    const target = this.settings.hexSize
+    this.setHexSize(this.introFrom + (target - this.introFrom) * easeOutExpo(t))
+
+    if (t >= 1) {
+      this.introMs = 0
+      // Land exactly on the setting rather than on the tween's last sample.
+      this.setHexSize(target)
+    }
+  }
+
   /** Advances the eased lens. Called by the frame loop; tests drive it directly. */
   step(dtMs: number): void {
+    this.advanceIntro(dtMs)
     const from = this.centre
 
     if (!this.settled) {
@@ -453,6 +521,7 @@ export class AtlasRenderer {
           highlighted: col === focal.col && row === focal.row,
           dim: song !== null && this.failedSongs.has(song.id),
           highlightColor: this.palette.highlight,
+          relief: this.relief,
         })
       }
     }
@@ -509,6 +578,7 @@ export class AtlasRenderer {
           highlighted: false,
           dim: song !== null && this.failedSongs.has(song.id),
           highlightColor: this.palette.highlight,
+          relief: this.relief,
         })
       }
     }

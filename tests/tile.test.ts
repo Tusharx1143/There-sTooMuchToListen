@@ -39,7 +39,7 @@ function opts(over: Partial<TileOpts> = {}): TileOpts {
     x: 100, y: 100, size: 11.28,
     angle: 0, radial: 1, tangential: 1, alpha: 1, wash: null,
     image: null, colors: ['#111111', '#222222'],
-    highlighted: false, dim: false, highlightColor: '#ffffff',
+    highlighted: false, dim: false, highlightColor: '#ffffff', relief: 0,
     ...over,
   }
 }
@@ -154,6 +154,42 @@ describe('drawTile', () => {
     const lit = fakeCtx()
     drawTile(lit.ctx, opts({ size: 40, highlighted: true }))
     expect(lit.calls).toContain('stroke')
+  })
+
+  /**
+   * The `depth` preset's stand-in for the reference's raymarched height field:
+   * a directional gradient plus a lit rim, drawn inside the tile's own clip.
+   */
+  it('adds no relief passes under the minimal preset', () => {
+    const { ctx, calls } = fakeCtx()
+    drawTile(ctx, opts({ size: 40, image: {} as CanvasImageSource, relief: 0 }))
+    expect(calls).not.toContain('createLinearGradient')
+    expect(calls).not.toContain('stroke')
+  })
+
+  it('shades and rims the tile under the depth preset', () => {
+    const { ctx, calls } = fakeCtx()
+    drawTile(ctx, opts({ size: 40, image: {} as CanvasImageSource, relief: 1 }))
+    // A gradient across the light axis, then a lit rim and a shadowed one.
+    expect(calls).toContain('createLinearGradient')
+    expect(calls.filter((c) => c === 'stroke')).toHaveLength(2)
+  })
+
+  it('reliefs solid tiles too, so the field does not change texture mid-lens', () => {
+    const flat = fakeCtx()
+    drawTile(flat.ctx, opts({ size: (SOLID_MIN_PX + ART_MIN_PX) / 2, relief: 0 }))
+    expect(flat.calls).not.toContain('stroke')
+
+    const lit = fakeCtx()
+    drawTile(lit.ctx, opts({ size: (SOLID_MIN_PX + ART_MIN_PX) / 2, relief: 1 }))
+    expect(lit.calls).toContain('stroke')
+  })
+
+  it('still balances every save with a restore under relief', () => {
+    const { ctx, calls } = fakeCtx()
+    drawTile(ctx, opts({ size: 40, image: {} as CanvasImageSource, relief: 1, wash: '#fff', alpha: 0.5 }))
+    expect(calls.filter((c) => c === 'save').length)
+      .toBe(calls.filter((c) => c === 'restore').length)
   })
 
   it('carries alpha onto the context', () => {
