@@ -127,6 +127,60 @@ test('volume and mute persist through the settings panel', async ({ page }) => {
   await expect(page.locator('[data-mute]')).toBeChecked()
 })
 
+test('the hover readout names the song under the lens once it parks', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('[data-unlock]').click()
+  await page.mouse.move(700, 450)
+
+  const label = page.locator('[data-hover-label]')
+  await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
+  await expect
+    .poll(async () => Number(await label.evaluate((el) => (el as HTMLElement).style.opacity)), {
+      timeout: 10000,
+    })
+    .toBeGreaterThan(0.9)
+})
+
+/** The point of fading it: sweeping must not strobe a title per tile crossed. */
+test('the hover readout fades out while the lens travels', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('[data-unlock]').click()
+  await page.mouse.move(700, 450)
+
+  const label = page.locator('[data-hover-label]')
+  await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
+  await page.waitForTimeout(1500)
+
+  await page.mouse.move(1250, 780)
+  await page.waitForTimeout(80)
+  const moving = Number(await label.evaluate((el) => (el as HTMLElement).style.opacity))
+  expect(moving).toBeLessThan(0.4)
+
+  await expect
+    .poll(async () => Number(await label.evaluate((el) => (el as HTMLElement).style.opacity)), {
+      timeout: 10000,
+    })
+    .toBeGreaterThan(0.9)
+})
+
+test('pinning a song hands the readout to the now-playing card', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('[data-unlock]').click()
+  await page.mouse.move(700, 450)
+
+  const label = page.locator('[data-hover-label]')
+  await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
+  await page.waitForTimeout(1500)
+
+  await page.mouse.click(700, 450)
+  await expect(page.locator('[data-now-playing]')).toBeVisible()
+  await expect
+    .poll(async () => Number(await label.evaluate((el) => (el as HTMLElement).style.opacity)), {
+      timeout: 5000,
+    })
+    .toBeLessThan(0.05)
+})
+
 /** Average colour of a patch away from the lens, as [r, g, b]. */
 async function sampleCanvas(page: Page): Promise<[number, number, number]> {
   return page.evaluate(() => {

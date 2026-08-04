@@ -13,6 +13,14 @@ export const LENS_RADIUS = 380
 export const LENS_K = 2
 export const LENS_TAU_MS = 90
 /**
+ * How much of the magnification is given up at full travel speed. The field
+ * churns badly when a strong lens is dragged across it; easing k down while
+ * moving and back up on arrival keeps the motion legible.
+ */
+export const LENS_SPEED_SOFTEN = 0.65
+/** Time constant for the smoothed speed estimate that drives the softening. */
+export const SPEED_TAU_MS = 120
+/**
  * Brightness of the undistorted field. High enough to read the covers out
  * there — the lens marks focus, it is not the only lit part of the atlas.
  */
@@ -47,6 +55,22 @@ export function makeLens(
   brightMin: number = BRIGHT_MIN,
 ): Lens {
   return { cx, cy, radius: LENS_RADIUS, k, brightMin }
+}
+
+/**
+ * Magnification actually applied, given how fast the lens is travelling.
+ * `speedScale` is 0 parked and 1 at the speed ceiling. k only ever decreases
+ * here, which keeps the rim clear of ART_MIN_PX for free.
+ */
+export function softenK(k: number, speedScale: number): number {
+  const t = Math.min(1, Math.max(0, speedScale))
+  return k * (1 - LENS_SPEED_SOFTEN * t)
+}
+
+/** Frame-rate independent exponential smoothing for the speed estimate. */
+export function easeScalar(current: number, target: number, dtMs: number, tauMs = SPEED_TAU_MS): number {
+  const a = 1 - Math.exp(-dtMs / tauMs)
+  return current + (target - current) * a
 }
 
 /** Sarkar-Brown radial magnification: f(d). Identity at and beyond the edge. */
@@ -122,13 +146,42 @@ export function unlensPoint(p: Point, lens: Lens): Point {
   return { x: lens.cx + (dx / dPrime) * d, y: lens.cy + (dy / dPrime) * d }
 }
 
-/** Exponential ease that gives the same result regardless of frame pacing. */
+/**
+ * Ceiling on how fast the lens may travel, in CSS pixels per millisecond.
+ * Without it the exponential ease covers ~16% of the remaining gap on the
+ * first frame, so flicking across a wide screen throws the lens a couple of
+ * hundred pixels in one step and it reads as a snap rather than a move.
+ */
+export const LENS_MAX_SPEED_PX_PER_MS = 2.2
+/** The same ceiling while a song is pinned — calmer, so reaching for the
+ *  now-playing card does not drag the atlas along behind the cursor. */
+export const LENS_MAX_SPEED_PINNED = 0.9
+/** Ease time constant while pinned. */
+export const LENS_TAU_PINNED_MS = 170
+
+/**
+ * Exponential ease that gives the same result regardless of frame pacing,
+ * with the per-step travel clamped. The clamp scales with `dtMs`, so unlike a
+ * fixed per-frame cap it behaves identically at 60Hz and 144Hz.
+ */
 export function easeCentre(
   c: Point,
   target: Point,
   dtMs: number,
   tauMs: number = LENS_TAU_MS,
+  maxPxPerMs: number = LENS_MAX_SPEED_PX_PER_MS,
 ): Point {
   const a = 1 - Math.exp(-dtMs / tauMs)
-  return { x: c.x + (target.x - c.x) * a, y: c.y + (target.y - c.y) * a }
+  let dx = (target.x - c.x) * a
+  let dy = (target.y - c.y) * a
+
+  const step = Math.hypot(dx, dy)
+  const cap = maxPxPerMs * dtMs
+  if (step > cap && step > 1e-9) {
+    const ratio = cap / step
+    dx *= ratio
+    dy *= ratio
+  }
+
+  return { x: c.x + dx, y: c.y + dy }
 }

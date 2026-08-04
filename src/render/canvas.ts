@@ -4,7 +4,19 @@ import { clampView, requiredCellKeys, visibleOffsets } from '../atlas/viewport'
 import type { CellStore } from '../data/loader'
 import { ImageCache, fallbackColors, speckleColor } from './imageCache'
 import { drawTile, tileTier, TILE_GAP } from './tile'
-import { easeCentre, makeLens, transformTile, unlensPoint, type Lens } from './lens'
+import {
+  easeCentre,
+  easeScalar,
+  makeLens,
+  softenK,
+  transformTile,
+  unlensPoint,
+  LENS_MAX_SPEED_PINNED,
+  LENS_MAX_SPEED_PX_PER_MS,
+  LENS_TAU_MS,
+  LENS_TAU_PINNED_MS,
+  type Lens,
+} from './lens'
 import { SettingsStore } from '../state/settings'
 import { PALETTES, type Palette } from '../state/theme'
 import { cellKey, type Song } from '../types'
@@ -29,11 +41,24 @@ export class AtlasRenderer {
   /** Where the lens is heading. Pointer sets this; touch pins it to centre. */
   lensTarget: Point = { x: 0, y: 0 }
 
+  /**
+   * True while a song is pinned. The lens travels slower and eases longer, so
+   * moving the cursor toward the now-playing card does not drag the atlas.
+   */
+  pinned = false
+
   private centre: Point = { x: 0, y: 0 }
   private focalOffset: Offset | null = null
   private focalSong: string | null = null
   private lastFrame = 0
   private readonly focalListeners = new Set<(o: Offset | null) => void>()
+
+  /** Smoothed travel speed, 0 parked to 1 at the ceiling. */
+  private speed = 0
+  private hoverOffset: Offset | null = null
+  private hoverSong: string | null = null
+  private readonly hoverListeners = new Set<(o: Offset | null) => void>()
+  private readonly frameListeners = new Set<() => void>()
 
   private dirty = true
   private raf: number | null = null
@@ -138,25 +163,64 @@ export class AtlasRenderer {
     return this.focalOffset
   }
 
+  /** Fires only once the lens parks. Audio and anything debounced wants this. */
   onFocalChange(cb: (o: Offset | null) => void): () => void {
     this.focalListeners.add(cb)
     return () => this.focalListeners.delete(cb)
+  }
+
+  /**
+   * Fires as the lens travels, on every tile it crosses. Anything that should
+   * track the cursor rather than wait for it — the readouts — wants this.
+   */
+  onHoverChange(cb: (o: Offset | null) => void): () => void {
+    this.hoverListeners.add(cb)
+    return () => this.hoverListeners.delete(cb)
+  }
+
+  /** 0 parked, 1 at the speed ceiling. Drives the lens softening and the label. */
+  get speedScale(): number {
+    return this.speed
+  }
+
+  private get maxSpeed(): number {
+    return this.pinned ? LENS_MAX_SPEED_PINNED : LENS_MAX_SPEED_PX_PER_MS
   }
 
   private get lens(): Lens {
     return makeLens(
       this.centre.x,
       this.centre.y,
-      this.settings.lensK,
+      softenK(this.settings.lensK, this.speed),
       this.settings.current.fieldLight,
     )
   }
 
   /** Advances the eased lens. Called by the frame loop; tests drive it directly. */
   step(dtMs: number): void {
+    const from = this.centre
+
     if (!this.settled) {
-      this.centre = easeCentre(this.centre, this.lensTarget, dtMs)
+      this.centre = easeCentre(
+        this.centre,
+        this.lensTarget,
+        dtMs,
+        this.pinned ? LENS_TAU_PINNED_MS : LENS_TAU_MS,
+        this.maxSpeed,
+      )
       this.invalidate()
+    }
+
+    // Measured from the distance actually covered, not from the target, so a
+    // capped step reports the speed it was allowed rather than the one it wanted.
+    const travelled = Math.hypot(this.centre.x - from.x, this.centre.y - from.y)
+    const instant = dtMs > 0 ? travelled / dtMs / this.maxSpeed : 0
+    const next = easeScalar(this.speed, Math.min(1, instant), dtMs)
+    if (Math.abs(next - this.speed) > 0.001) {
+      this.speed = next
+      this.invalidate() // magnification depends on it
+    } else if (next !== this.speed && this.settled) {
+      this.speed = next
     }
 
     // Re-check rather than returning early: the ease above may have parked the
@@ -169,6 +233,31 @@ export class AtlasRenderer {
       }
       this.updateFocal()
     }
+
+    this.updateHover()
+  }
+
+  /** The tile under the lens centre right now, published as it changes. */
+  private updateHover(): void {
+    const next = this.offsetUnderCentre()
+    const song = next ? songAt(next, this.layout, this.store) : null
+    const songId = song?.id ?? null
+
+    // Track the song as well as the tile, for the same reason updateFocal
+    // does: the lens routinely parks on a tile whose cell is still in flight,
+    // and comparing tiles alone means the arriving song is never announced.
+    const same = next?.col === this.hoverOffset?.col && next?.row === this.hoverOffset?.row
+    if (same && songId === this.hoverSong) return
+
+    this.hoverOffset = next
+    this.hoverSong = songId
+    for (const cb of this.hoverListeners) cb(next)
+  }
+
+  private offsetUnderCentre(): Offset | null {
+    const world = { x: this.centre.x + this.view.x, y: this.centre.y + this.view.y }
+    const o = axialToOffset(pixelToAxial(world, this.layout.hexSize))
+    return this.layout.slotAt(o) ? o : null
   }
 
   /**
@@ -177,9 +266,7 @@ export class AtlasRenderer {
    * audio engine's hover debounce would reset on every eased frame.
    */
   private updateFocal(): void {
-    const world = { x: this.centre.x + this.view.x, y: this.centre.y + this.view.y }
-    const o = axialToOffset(pixelToAxial(world, this.layout.hexSize))
-    const next = this.layout.slotAt(o) ? o : null
+    const next = this.offsetUnderCentre()
     const song = next ? songAt(next, this.layout, this.store) : null
     const songId = song?.id ?? null
 
@@ -237,6 +324,15 @@ export class AtlasRenderer {
     this.invalidate()
   }
 
+  /**
+   * Runs after every step, drawn or not. For DOM that has to track the lens
+   * continuously rather than react to discrete changes.
+   */
+  onFrame(cb: () => void): () => void {
+    this.frameListeners.add(cb)
+    return () => this.frameListeners.delete(cb)
+  }
+
   start(): void {
     const loop = (ts: number): void => {
       const dt = this.lastFrame ? Math.min(ts - this.lastFrame, 100) : 16
@@ -247,6 +343,7 @@ export class AtlasRenderer {
         this.dirty = false
         this.draw()
       }
+      for (const cb of this.frameListeners) cb()
       this.raf = requestAnimationFrame(loop)
     }
     this.raf = requestAnimationFrame(loop)

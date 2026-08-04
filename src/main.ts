@@ -17,6 +17,7 @@ import { Toolbar } from './ui/toolbar'
 import { AboutPanel } from './ui/aboutPanel'
 import { SettingsPanel } from './ui/settingsPanel'
 import { closeAllPanels } from './ui/panel'
+import { HoverLabel } from './ui/hoverLabel'
 import { Momentum } from './render/momentum'
 
 async function boot(): Promise<void> {
@@ -51,9 +52,17 @@ async function boot(): Promise<void> {
   const genreLabels = new Map(manifest.genres.map((g) => [g.id, g.label]))
   const hud = new AxisHud(root, layout, genreLabels)
 
+  // Hoisted so the card's close button can reach it; both only ever run in
+  // response to a click, long after `label` below is initialised.
+  function setPinned(on: boolean): void {
+    renderer.pinned = on
+    label.suppress(on)
+  }
+
   const card = new NowPlayingCard(root, () => {
     audio.unpin()
     card.hide()
+    setPinned(false)
   })
 
   const minimap = new Minimap(root, layout, (world) => {
@@ -98,12 +107,25 @@ async function boot(): Promise<void> {
   renderer.failedSongs = audio.failed
   audio.onFailure(() => renderer.invalidateField())
 
-  // The lens picks the focal tile; the HUD and audio follow it rather than raw
-  // pointer position, so they only fire once it has parked.
+  // Audio waits for the lens to park — starting a preview per tile crossed
+  // would be unlistenable.
   renderer.onFocalChange((hex) => {
-    hud.update(hex)
     audio.hover(hex ? songAt(hex, layout, store) : null)
   })
+
+  // The readouts track the lens as it travels instead. The label fades itself
+  // out while moving, so it names the tile without strobing through hundreds.
+  const label = new HoverLabel(root)
+  renderer.onHoverChange((hex) => {
+    hud.update(hex)
+    label.show(hex ? songAt(hex, layout, store) : null)
+  })
+  renderer.onFrame(() =>
+    label.update(renderer.lensCentre, renderer.speedScale, {
+      w: window.innerWidth,
+      h: window.innerHeight,
+    }),
+  )
 
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
@@ -119,6 +141,7 @@ async function boot(): Promise<void> {
     if (!song) return
     audio.pin(song)
     card.show(song)
+    setPinned(true)
   }
 
   const syncMinimap = (): void =>
@@ -168,9 +191,11 @@ async function boot(): Promise<void> {
         if (audio.pinned?.id === song.id) {
           audio.unpin()
           card.hide()
+          setPinned(false)
         } else {
           audio.pin(song)
           card.show(song)
+          setPinned(true)
         }
       },
       onLeave: () => {

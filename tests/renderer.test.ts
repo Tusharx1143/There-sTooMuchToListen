@@ -119,6 +119,66 @@ describe('AtlasRenderer lens', () => {
     expect(r.hoverAt(-500, -500)).toBeNull()
   })
 
+  it('reports travel speed that rises while moving and decays when parked', () => {
+    const r = makeRenderer()
+    expect(r.speedScale).toBe(0)
+
+    r.lensTarget = { x: 20, y: 20 }
+    for (let i = 0; i < 8; i++) r.step(16)
+    const moving = r.speedScale
+    expect(moving).toBeGreaterThan(0)
+
+    for (let i = 0; i < 200; i++) r.step(16)
+    expect(r.speedScale).toBeLessThan(moving)
+    expect(r.speedScale).toBeLessThan(0.05)
+  })
+
+  it('never reports a speed above the ceiling', () => {
+    const r = makeRenderer()
+    r.lensTarget = { x: 100000, y: 100000 }
+    for (let i = 0; i < 60; i++) {
+      r.step(16)
+      expect(r.speedScale).toBeLessThanOrEqual(1)
+    }
+  })
+
+  /** Their select-mode idea: a pinned song calms the controls right down. */
+  it('travels less far per step while pinned', () => {
+    const far = { x: 5000, y: 0 }
+
+    const loose = makeRenderer()
+    loose.lensTarget = { ...far }
+    const looseStart = loose.lensCentre.x
+    loose.step(16)
+    const looseMoved = loose.lensCentre.x - looseStart
+
+    const calm = makeRenderer()
+    calm.pinned = true
+    calm.lensTarget = { ...far }
+    const calmStart = calm.lensCentre.x
+    calm.step(16)
+    const calmMoved = calm.lensCentre.x - calmStart
+
+    expect(calmMoved).toBeGreaterThan(0)
+    expect(calmMoved).toBeLessThan(looseMoved)
+  })
+
+  it('publishes hover as the lens crosses tiles, before it parks', () => {
+    const r = makeRenderer()
+    const settledSeen: (Offset | null)[] = []
+    const hoverSeen: (Offset | null)[] = []
+    r.onFocalChange((o) => settledSeen.push(o))
+    r.onHoverChange((o) => hoverSeen.push(o))
+
+    r.lensTarget = { x: 40, y: 40 }
+    for (let i = 0; i < 10; i++) r.step(16)
+
+    // Still travelling: the readout has moved on, the audio trigger has not.
+    expect(r.settled).toBe(false)
+    expect(hoverSeen.length).toBeGreaterThan(0)
+    expect(settledSeen).toHaveLength(0)
+  })
+
   it('notifies focal changes only once settled', () => {
     const r = makeRenderer()
     const seen: (Offset | null)[] = []

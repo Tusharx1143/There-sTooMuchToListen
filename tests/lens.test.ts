@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   makeLens, lensRadius, radialScale, tangentialScale, brightness,
-  transformTile, unlensPoint, easeCentre,
+  transformTile, unlensPoint, easeCentre, softenK,
   LENS_RADIUS, LENS_K, BRIGHT_MIN,
 } from '../src/render/lens'
 
@@ -111,11 +111,71 @@ describe('unlensPoint', () => {
   })
 })
 
+describe('softenK', () => {
+  it('is the full magnification when parked', () => {
+    expect(softenK(4, 0)).toBe(4)
+  })
+
+  it('gives up magnification as the lens speeds up, monotonically', () => {
+    let prev = softenK(4, 0)
+    for (let s = 0.1; s <= 1; s += 0.1) {
+      const k = softenK(4, s)
+      expect(k).toBeLessThan(prev)
+      prev = k
+    }
+  })
+
+  /**
+   * k only ever decreases, which is what keeps the compressed lens rim clear
+   * of ART_MIN_PX without a second check — the tightest tile is 1/(k+1) of a
+   * full one, and a smaller k makes that larger.
+   */
+  it('never raises k above the value it was given', () => {
+    for (let s = -1; s <= 2; s += 0.25) expect(softenK(4, s)).toBeLessThanOrEqual(4)
+  })
+
+  it('clamps out-of-range speeds rather than inverting the lens', () => {
+    expect(softenK(4, 5)).toBe(softenK(4, 1))
+    expect(softenK(4, -3)).toBe(softenK(4, 0))
+    expect(softenK(4, 5)).toBeGreaterThan(0)
+  })
+})
+
 describe('easeCentre', () => {
   it('moves toward the target without overshooting', () => {
     const c = easeCentre({ x: 0, y: 0 }, { x: 100, y: 0 }, 16, 90)
     expect(c.x).toBeGreaterThan(0)
     expect(c.x).toBeLessThan(100)
+  })
+
+  /**
+   * Without the cap the ease covers ~16% of the gap on the first frame, so a
+   * flick across a wide screen jumps a couple of hundred pixels at once.
+   */
+  it('caps how far it travels in one step', () => {
+    const c = easeCentre({ x: 0, y: 0 }, { x: 4000, y: 0 }, 16, 90, 2.2)
+    expect(c.x).toBeCloseTo(2.2 * 16, 6)
+  })
+
+  it('leaves short moves untouched by the cap', () => {
+    const capped = easeCentre({ x: 0, y: 0 }, { x: 20, y: 0 }, 16, 90, 2.2)
+    const uncapped = easeCentre({ x: 0, y: 0 }, { x: 20, y: 0 }, 16, 90, Infinity)
+    expect(capped.x).toBeCloseTo(uncapped.x, 9)
+  })
+
+  it('caps distance travelled, not distance per frame', () => {
+    // One 32ms step must cover the same ground as two 16ms steps, or the lens
+    // would move at different speeds on 60Hz and 144Hz displays.
+    const target = { x: 4000, y: 0 }
+    const one = easeCentre({ x: 0, y: 0 }, target, 32, 90, 2.2)
+    const two = easeCentre(easeCentre({ x: 0, y: 0 }, target, 16, 90, 2.2), target, 16, 90, 2.2)
+    expect(two.x).toBeCloseTo(one.x, 9)
+  })
+
+  it('holds the direction of travel while capping', () => {
+    const c = easeCentre({ x: 0, y: 0 }, { x: 3000, y: 4000 }, 16, 90, 2.2)
+    expect(c.y / c.x).toBeCloseTo(4 / 3, 9)
+    expect(Math.hypot(c.x, c.y)).toBeCloseTo(2.2 * 16, 6)
   })
 
   it('converges', () => {
