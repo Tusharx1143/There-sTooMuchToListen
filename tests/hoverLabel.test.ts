@@ -78,17 +78,43 @@ describe('HoverLabel', () => {
   })
 
   /** The now-playing card already names the pinned track. */
-  it('is suppressed while a song is pinned', () => {
+  it('hides while the lens sits on the pinned song', () => {
     const label = new HoverLabel(root)
-    label.show(song())
+    label.show(song({ id: 'pinned' }))
     settle(label, 0)
     expect(el(root).style.visibility).toBe('visible')
 
-    label.suppress(true)
+    label.setPinned('pinned')
+    settle(label, 0)
+    expect(el(root).style.visibility).toBe('hidden')
+  })
+
+  /**
+   * Pinning locks the audio; it does not end the browsing session. Hiding the
+   * readout for the whole pinned session leaves no way to get it back short of
+   * closing the card, which is not discoverable.
+   */
+  it('keeps naming other songs while one is pinned', () => {
+    const label = new HoverLabel(root)
+    label.setPinned('pinned')
+    label.show(song({ id: 'pinned' }))
     settle(label, 0)
     expect(el(root).style.visibility).toBe('hidden')
 
-    label.suppress(false)
+    label.show(song({ id: 'other', title: 'Elsewhere' }))
+    settle(label, 0)
+    expect(el(root).style.visibility).toBe('visible')
+    expect(root.textContent).toContain('Elsewhere')
+  })
+
+  it('comes back on the same song once it is unpinned', () => {
+    const label = new HoverLabel(root)
+    label.show(song({ id: 'pinned' }))
+    label.setPinned('pinned')
+    settle(label, 0)
+    expect(el(root).style.visibility).toBe('hidden')
+
+    label.setPinned(null)
     settle(label, 0)
     expect(el(root).style.visibility).toBe('visible')
   })

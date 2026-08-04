@@ -25,7 +25,7 @@ export class HoverLabel {
   private readonly metaEl: HTMLElement
 
   private song: Song | null = null
-  private suppressed = false
+  private pinnedId: string | null = null
   private opacity = 0
   private at: Point | null = null
   private flipped = false
@@ -55,11 +55,13 @@ export class HoverLabel {
   }
 
   /**
-   * Hidden while a song is pinned: the now-playing card is already saying all
-   * of this, and two readouts of the same track is one too many.
+   * The pinned song, if any. The label hides only while the lens is actually
+   * over that song — the now-playing card is already naming it, and two
+   * readouts of one track is one too many. Everywhere else it keeps working:
+   * pinning locks the audio, it does not end the browsing session.
    */
-  suppress(on: boolean): void {
-    this.suppressed = on
+  setPinned(songId: string | null): void {
+    this.pinnedId = songId
   }
 
   /**
@@ -67,7 +69,7 @@ export class HoverLabel {
    * at the ceiling — the label is only legible when it is near 0.
    */
   update(centre: Point, speedScale: number, viewport: { w: number; h: number }): void {
-    const wants = this.song !== null && !this.suppressed
+    const wants = this.song !== null && this.song.id !== this.pinnedId
     const target = wants ? 1 - Math.min(1, speedScale / FADE_AT) : 0
 
     this.opacity += (target - this.opacity) * FOLLOW

@@ -54,15 +54,15 @@ async function boot(): Promise<void> {
 
   // Hoisted so the card's close button can reach it; both only ever run in
   // response to a click, long after `label` below is initialised.
-  function setPinned(on: boolean): void {
-    renderer.pinned = on
-    label.suppress(on)
+  function setPinned(songId: string | null): void {
+    renderer.pinned = songId !== null
+    label.setPinned(songId)
   }
 
   const card = new NowPlayingCard(root, () => {
     audio.unpin()
     card.hide()
-    setPinned(false)
+    setPinned(null)
   })
 
   const minimap = new Minimap(root, layout, (world) => {
@@ -141,7 +141,7 @@ async function boot(): Promise<void> {
     if (!song) return
     audio.pin(song)
     card.show(song)
-    setPinned(true)
+    setPinned(song.id)
   }
 
   const syncMinimap = (): void =>
@@ -191,11 +191,11 @@ async function boot(): Promise<void> {
         if (audio.pinned?.id === song.id) {
           audio.unpin()
           card.hide()
-          setPinned(false)
+          setPinned(null)
         } else {
           audio.pin(song)
           card.show(song)
-          setPinned(true)
+          setPinned(song.id)
         }
       },
       onLeave: () => {

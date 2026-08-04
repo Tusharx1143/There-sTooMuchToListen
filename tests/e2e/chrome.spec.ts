@@ -181,6 +181,33 @@ test('pinning a song hands the readout to the now-playing card', async ({ page }
     .toBeLessThan(0.05)
 })
 
+/**
+ * Pinning locks the audio, it does not end the browsing session. Suppressing
+ * the readout for the whole pinned session left no discoverable way back.
+ */
+test('the hover readout returns on other songs after one is pinned', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('[data-unlock]').click()
+  await page.mouse.move(700, 450)
+
+  const label = page.locator('[data-hover-label]')
+  await expect(label.locator('h2')).not.toBeEmpty({ timeout: 15000 })
+  await page.waitForTimeout(1500)
+
+  const pinnedTitle = await label.locator('h2').textContent()
+  await page.mouse.click(700, 450)
+  await expect(page.locator('[data-now-playing]')).toBeVisible()
+
+  // Move off the pinned tile — far enough to be a different song.
+  await page.mouse.move(430, 300)
+  await expect
+    .poll(async () => Number(await label.evaluate((el) => (el as HTMLElement).style.opacity)), {
+      timeout: 15000,
+    })
+    .toBeGreaterThan(0.9)
+  expect(await label.locator('h2').textContent()).not.toBe(pinnedTitle)
+})
+
 /** Average colour of a patch away from the lens, as [r, g, b]. */
 async function sampleCanvas(page: Page): Promise<[number, number, number]> {
   return page.evaluate(() => {
