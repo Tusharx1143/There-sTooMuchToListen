@@ -12,6 +12,7 @@ import { DEFAULTS, HEX_SIZE_BY_TILE, SettingsStore } from '../src/state/settings
 beforeEach(() => localStorage.clear())
 import { axialToPixel, offsetToAxial, type Offset } from '../src/atlas/hex'
 import { makeLens, transformTile } from '../src/render/lens'
+import { TILE_GAP } from '../src/render/tile'
 import type { Song } from '../src/types'
 
 function stubCanvas(): HTMLCanvasElement {
@@ -167,6 +168,57 @@ describe('AtlasRenderer lens', () => {
 
     expect(calmMoved).toBeGreaterThan(0)
     expect(calmMoved).toBeLessThan(looseMoved)
+  })
+
+  /**
+   * The now-playing card sits beside its tile, so it needs the tile's screen
+   * position every frame — through the same lens the frame was drawn with.
+   */
+  describe('anchorOf', () => {
+    /** Parks the lens on the origin tile and lets the speed estimate decay. */
+    function onOrigin(): AtlasRenderer {
+      const r = makeRenderer()
+      r.lensTarget = { x: 0, y: 0 }
+      for (let i = 0; i < 200; i++) r.step(16)
+      return r
+    }
+
+    const FLAT = HEX_SIZE_BY_TILE.medium * TILE_GAP
+
+    it('places the tile under the lens centre at the centre itself', () => {
+      const a = onOrigin().anchorOf({ col: 0, row: 0 })!
+      // f(0) = 0, so the centre maps to itself.
+      expect(a.x).toBeCloseTo(0)
+      expect(a.y).toBeCloseTo(0)
+    })
+
+    it('reports a reach the lens has magnified', () => {
+      const r = onOrigin()
+      const focal = r.anchorOf({ col: 0, row: 0 })!
+      const outside = r.anchorOf({ col: 10, row: 0 })!
+
+      expect(focal.clear).toBeGreaterThan(FLAT * 2)
+      // Well outside the lens radius, so it is drawn at its natural size.
+      expect(outside.clear).toBeCloseTo(FLAT)
+    })
+
+    it('moves the anchor when the atlas pans under it', () => {
+      // `makeRenderer`'s two-country atlas is narrower than the viewport, so
+      // clampView pins the view and a pan there is a no-op. This needs room.
+      const wide = new AtlasRenderer(
+        stubCanvas(),
+        new AtlasLayout(Array.from({ length: 40 }, (_, i) => `c${i}`), [14, 21]),
+        emptyStore(),
+        stubImages(),
+      )
+      const before = wide.anchorOf({ col: 10, row: 0 })!
+      wide.panBy(140, 0)
+      expect(wide.anchorOf({ col: 10, row: 0 })!.x).toBeCloseTo(before.x - 140)
+    })
+
+    it('returns nothing once the tile is off screen', () => {
+      expect(makeRenderer().anchorOf({ col: 100000, row: 100000 })).toBeNull()
+    })
   })
 
   it('publishes hover as the lens crosses tiles, before it parks', () => {

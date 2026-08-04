@@ -217,6 +217,70 @@ test('pinning a song hands the readout to the now-playing card', async ({ page }
 })
 
 /**
+ * The card is about one hex, so it reads as attached to it rather than parked
+ * in a corner — and it flips to whichever side of that hex has the room.
+ */
+test('the now-playing card sits beside the tile it was pinned from', async ({ page }) => {
+  await readySettled(page)
+
+  await page.mouse.click(400, 400)
+  const card = page.locator('[data-now-playing]')
+  await expect(card).toBeVisible()
+
+  const middle = (await card.boundingBox())!
+  // Level with the tile it came from, and clear of the corner it used to live in.
+  expect(middle.y + middle.height / 2).toBeGreaterThan(250)
+  expect(middle.y + middle.height / 2).toBeLessThan(560)
+  expect(middle.x).toBeGreaterThan(400)
+  await expect(card).not.toHaveClass(/flipped/)
+
+  // Now one near the right edge: there is no room on the right any more.
+  await page.mouse.click(1180, 400)
+  await expect(card).toHaveClass(/flipped/)
+  expect((await card.boundingBox())!.x).toBeLessThan(1180)
+})
+
+/** Reaching for the links moves the lens, which would drag the card away. */
+test('the now-playing card holds a link still under the pointer', async ({ page }) => {
+  await readySettled(page)
+
+  await page.mouse.click(400, 400)
+  const card = page.locator('[data-now-playing]')
+  await expect(card).toBeVisible()
+
+  const link = card.getByText('Full song on YouTube')
+  await link.hover()
+  const parked = (await link.boundingBox())!
+
+  await page.waitForTimeout(700)
+  expect((await link.boundingBox())!.x).toBeCloseTo(parked.x, 0)
+  await expect(link).toBeVisible()
+})
+
+/**
+ * The card floats over the middle of the atlas. If it took the pointer, the
+ * lens would stop dead wherever it happened to land and browsing would end.
+ */
+test('the now-playing card lets the atlas keep the cursor', async ({ page }) => {
+  await readySettled(page)
+
+  await page.mouse.click(400, 400)
+  const card = page.locator('[data-now-playing]')
+  await expect(card).toBeVisible()
+
+  const box = (await card.boundingBox())!
+  const label = page.locator('[data-hover-label]')
+
+  // Park the cursor in the middle of the card, clear of its links.
+  await page.mouse.move(box.x + box.width / 2, box.y + 14)
+  await expect
+    .poll(async () => Number(await label.evaluate((el) => (el as HTMLElement).style.opacity)), {
+      timeout: 15000,
+    })
+    .toBeGreaterThan(0.9)
+})
+
+/**
  * Pinning locks the audio, it does not end the browsing session. Suppressing
  * the readout for the whole pinned session left no discoverable way back.
  */

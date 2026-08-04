@@ -3,7 +3,7 @@ import { AtlasLayout, CELL_COLS } from '../atlas/layout'
 import { clampView, requiredCellKeys, visibleOffsets } from '../atlas/viewport'
 import type { CellStore } from '../data/loader'
 import { ImageCache, fallbackColors, speckleColor } from './imageCache'
-import { drawTile, tileTier, TILE_GAP } from './tile'
+import { drawTile, reliefAt, tileTier, TILE_GAP } from './tile'
 import {
   easeCentre,
   easeScalar,
@@ -23,6 +23,13 @@ import { cellKey, type Song } from '../types'
 
 /** Under this much distance left to travel, the lens counts as parked. */
 const SETTLE_PX = 0.25
+
+/**
+ * Where a tile is drawn on screen, and how far its magnified art reaches from
+ * that centre. What the now-playing card needs in order to sit beside the hex
+ * it belongs to rather than in a fixed corner.
+ */
+export type TileAnchor = { x: number; y: number; clear: number }
 
 /**
  * Intro reveal. The reference opens on a coarse lattice
@@ -57,6 +64,13 @@ export class AtlasRenderer {
   lensTarget: Point = { x: 0, y: 0 }
 
   private pinnedState = false
+
+  /**
+   * The pinned tile, if any. The now-playing card anchors itself to wherever
+   * this lands on screen, so it has to survive panning and lens travel — the
+   * boolean alone is not enough to place it.
+   */
+  pinnedTile: Offset | null = null
 
   /**
    * True while a song is pinned. The lens travels slower and eases longer, so
@@ -378,6 +392,22 @@ export class AtlasRenderer {
     this.invalidate()
   }
 
+  /**
+   * Where a hex is drawn right now, through the same lens the frame used, plus
+   * the half-extent its magnified art occupies. Null once it has left the
+   * screen, which is the caller's cue that there is nothing to anchor to.
+   */
+  anchorOf(o: Offset): TileAnchor | null {
+    const p = axialToPixel(offsetToAxial(o), this.layout.hexSize)
+    const t = transformTile({ x: p.x - this.view.x, y: p.y - this.view.y }, this.lens)
+    const clear = this.layout.hexSize * TILE_GAP * Math.max(t.radial, t.tangential)
+
+    const w = window.innerWidth
+    const h = window.innerHeight
+    if (t.x < -clear || t.x > w + clear || t.y < -clear || t.y > h + clear) return null
+    return { x: t.x, y: t.y, clear }
+  }
+
   /** Screen coordinates → the hex drawn under them, undoing the distortion. */
   hoverAt(clientX: number, clientY: number): Offset | null {
     const flat = unlensPoint({ x: clientX, y: clientY }, this.lens)
@@ -521,7 +551,9 @@ export class AtlasRenderer {
           highlighted: col === focal.col && row === focal.row,
           dim: song !== null && this.failedSongs.has(song.id),
           highlightColor: this.palette.highlight,
-          relief: this.relief,
+          // Deepest under the cursor, flattening to the field's strength at the
+          // rim — where the cached layer takes over at exactly the same value.
+          relief: reliefAt(this.relief, Math.max(t.radial, t.tangential), lens.k),
         })
       }
     }
@@ -578,7 +610,9 @@ export class AtlasRenderer {
           highlighted: false,
           dim: song !== null && this.failedSongs.has(song.id),
           highlightColor: this.palette.highlight,
-          relief: this.relief,
+          // Every tile out here is at scale 1, so they all sit at the ramp's
+          // floor. `k` is irrelevant at magnification 1; pass the live one anyway.
+          relief: reliefAt(this.relief, 1, this.settings.lensK),
         })
       }
     }

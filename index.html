@@ -260,14 +260,40 @@
       }
       .hover-meta { margin: 0; color: var(--fg); opacity: .82; font-size: 14px; font-weight: 500; }
 
-      /* --- Bottom chrome --------------------------------------------------- */
+      /* --- Now playing -----------------------------------------------------
+         Anchored to the tile it came from, not to a corner: position is written
+         per frame from src/ui/nowPlaying.ts, so `top`/`left` stay at 0 and the
+         transform does the placing. Only opacity is transitioned here — a
+         transition on the transform would fight the follow. */
       .now-playing {
-        position: fixed; left: 20px; bottom: 20px; width: min(440px, calc(100vw - 40px));
-        display: none; gap: 16px; padding: 18px;
+        position: fixed; top: 0; left: 0;
+        /* Border-box on purpose: the card has to fit in the gap left beside a
+           magnified tile, and that sum is done in JS against this number. */
+        width: min(360px, calc(100vw - 40px)); box-sizing: border-box;
+        display: flex; gap: 16px; padding: 18px;
         background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
         backdrop-filter: blur(10px); color: var(--fg); font: 15px/1.45 system-ui, sans-serif;
+        /* Layered under the panels, over the atlas. */
+        box-shadow: 0 8px 40px rgba(var(--scrim), .55);
+        opacity: 0; visibility: hidden; will-change: transform, opacity;
+        transition: opacity var(--dur) var(--ease), visibility 0s linear var(--dur);
       }
-      .now-playing.visible { display: flex; }
+      .now-playing.visible {
+        opacity: 1; visibility: visible;
+        transition: opacity var(--dur) var(--ease);
+      }
+      /* The card floats over the middle of the atlas, so it must not swallow
+         the cursor: hovering it has to keep driving the lens underneath, or
+         browsing stops dead wherever the card happens to be. Only its controls
+         take the pointer. Scoped under #ui to outrank `#ui > *`. */
+      #ui > .now-playing { pointer-events: none; }
+      .np-links a, .np-close { pointer-events: auto; }
+      /* Flipped to the left of its tile: put the art on the inside edge, so the
+         card still reads as pointing back at the hex it describes. */
+      .now-playing.flipped { flex-direction: row-reverse; }
+      .now-playing.flipped .np-body { text-align: right; }
+      .now-playing.flipped .np-links { justify-content: flex-end; }
+      .now-playing.flipped .np-close { right: auto; left: 12px; }
       .np-art { width: 96px; height: 96px; border-radius: 8px; object-fit: cover; flex: none; }
       .np-body { min-width: 0; }
       .now-playing h2 { margin: 0 0 3px; font-size: 18px; text-transform: none; letter-spacing: 0; }
@@ -279,6 +305,8 @@
         position: absolute; top: 8px; right: 12px; background: none; border: 0;
         color: var(--fg-faint); font-size: 22px; cursor: pointer; line-height: 1;
       }
+
+      /* --- Bottom chrome --------------------------------------------------- */
       .minimap {
         position: fixed; right: 20px; bottom: 20px;
         border: 1px solid var(--border); border-radius: 8px; cursor: crosshair;

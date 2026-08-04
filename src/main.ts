@@ -1,3 +1,4 @@
+import type { Offset } from './atlas/hex'
 import { AtlasLayout } from './atlas/layout'
 import { CellStore, loadManifest } from './data/loader'
 import { ImageCache } from './render/imageCache'
@@ -54,8 +55,9 @@ async function boot(): Promise<void> {
 
   // Hoisted so the card's close button can reach it; both only ever run in
   // response to a click, long after `label` below is initialised.
-  function setPinned(songId: string | null): void {
+  function setPinned(songId: string | null, hex: Offset | null = null): void {
     renderer.pinned = songId !== null
+    renderer.pinnedTile = songId === null ? null : hex
     label.setPinned(songId)
   }
 
@@ -127,12 +129,17 @@ async function boot(): Promise<void> {
     hud.update(hex)
     label.show(hex ? songAt(hex, layout, store) : null)
   })
-  renderer.onFrame(() =>
-    label.update(renderer.lensCentre, renderer.speedScale, {
-      w: window.innerWidth,
-      h: window.innerHeight,
-    }),
-  )
+  // Both readouts are placed per frame rather than on discrete changes: the
+  // label follows the lens, and the card follows the tile it was pinned from,
+  // which moves whenever the atlas pans or the lens magnifies it.
+  renderer.onFrame(() => {
+    const viewport = { w: window.innerWidth, h: window.innerHeight }
+    label.update(renderer.lensCentre, renderer.speedScale, viewport)
+    card.update(
+      renderer.pinnedTile ? renderer.anchorOf(renderer.pinnedTile) : null,
+      viewport,
+    )
+  })
 
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
@@ -149,7 +156,7 @@ async function boot(): Promise<void> {
     if (!song) return
     audio.pin(song)
     card.show(song)
-    setPinned(song.id)
+    setPinned(song.id, hex)
   }
 
   const syncMinimap = (): void =>
@@ -207,7 +214,7 @@ async function boot(): Promise<void> {
         } else {
           audio.pin(song)
           card.show(song)
-          setPinned(song.id)
+          setPinned(song.id, hex)
         }
       },
       onLeave: () => {
