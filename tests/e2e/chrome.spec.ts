@@ -12,11 +12,11 @@ async function ready(page: Page): Promise<void> {
 // starting point of every theme assertion depends on the runner's environment.
 test.use({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' })
 
-test('the toolbar offers four labelled controls', async ({ page }) => {
+test('the toolbar offers three labelled controls', async ({ page }) => {
   await ready(page)
   const bar = page.locator('[data-toolbar]')
   await expect(bar).toBeVisible()
-  await expect(bar.locator('.tool-btn')).toHaveCount(4)
+  await expect(bar.locator('.tool-btn')).toHaveCount(3)
 
   // Anchored to the top-right, clear of the search box now on the left.
   const bounds = (await bar.boundingBox())!
@@ -45,15 +45,15 @@ test('the about panel opens, expands a section, and closes on Escape', async ({ 
   await expect(page.locator('[data-about]')).toHaveAttribute('aria-expanded', 'false')
 })
 
-test('the about panel carries no source link of its own', async ({ page }) => {
+/** No repository link anywhere in the chrome — panel or toolbar. */
+test('the chrome carries no source link', async ({ page }) => {
   await ready(page)
+  await expect(page.locator('[data-toolbar] a')).toHaveCount(0)
+
   await page.locator('[data-about]').click()
   const panel = page.locator('[data-panel="About"]')
   await expect(panel).toBeVisible()
   await expect(panel.locator('a')).toHaveCount(0)
-
-  // The toolbar is the one route to the repository.
-  await expect(page.locator('[data-toolbar] [data-source]')).toHaveCount(1)
 })
 
 test('an open panel hides the hover readout they would otherwise overlap', async ({ page }) => {

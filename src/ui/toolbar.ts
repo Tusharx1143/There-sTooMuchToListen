@@ -1,8 +1,6 @@
 import type { SettingsStore } from '../state/settings'
 import type { ThemeController } from '../state/theme'
 
-export const REPO_URL = 'https://github.com/Tusharx1143/There-sTooMuchToListen'
-
 /**
  * Inline so the toolbar needs no icon font or sprite request. Each is a 24-box
  * stroked path, matching the reference's line weight.
@@ -14,8 +12,6 @@ const ICONS = {
     '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
-  github:
-    '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>',
 } as const
 
 function svg(paths: string): SVGSVGElement {
@@ -46,9 +42,9 @@ export type ToolbarHandlers = {
 }
 
 /**
- * The four controls in the top-right corner: about, settings, theme, source.
- * The first two are `aria-expanded` toggles whose state the panels push back
- * into via `setExpanded`, so closing a panel by Escape still un-lights its icon.
+ * The three controls in the top-right corner: about, settings, theme. The
+ * first two are `aria-expanded` toggles whose state the panels push back into
+ * via `setExpanded`, so closing a panel by Escape still un-lights its icon.
  */
 export class Toolbar {
   private readonly aboutBtn: HTMLButtonElement
@@ -84,16 +80,7 @@ export class Toolbar {
       settings.set('theme', theme.current === 'dark' ? 'light' : 'dark')
     })
 
-    const source = document.createElement('a')
-    source.className = 'tool-btn'
-    source.href = REPO_URL
-    source.target = '_blank'
-    source.rel = 'noopener noreferrer'
-    source.setAttribute('aria-label', 'Source code on GitHub')
-    source.setAttribute('data-source', '')
-    source.appendChild(svg(ICONS.github))
-
-    bar.append(this.aboutBtn, this.settingsBtn, this.themeBtn, source)
+    bar.append(this.aboutBtn, this.settingsBtn, this.themeBtn)
     root.appendChild(bar)
 
     this.paintThemeIcon(theme.current)

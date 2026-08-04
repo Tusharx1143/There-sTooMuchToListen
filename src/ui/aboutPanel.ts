@@ -124,8 +124,7 @@ export class AboutPanel {
       },
       {
         title: 'Data & credits',
-        // No source link here on purpose: the toolbar carries its own GitHub
-        // button, and one route to the repository is enough.
+        // Credits only — the chrome carries no repository link anywhere.
         body: () => {
           const wrap = paragraphs(
             'Previews, cover art and metadata are harvested from the iTunes ' +

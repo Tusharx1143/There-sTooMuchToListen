@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { DEFAULTS, SettingsStore } from '../src/state/settings'
 import { ThemeController } from '../src/state/theme'
-import { REPO_URL, Toolbar } from '../src/ui/toolbar'
+import { Toolbar } from '../src/ui/toolbar'
 
 function build(theme: 'light' | 'dark' = 'dark') {
   const root = document.createElement('div')
@@ -15,19 +15,17 @@ function build(theme: 'light' | 'dark' = 'dark') {
 beforeEach(() => localStorage.clear())
 
 describe('Toolbar', () => {
-  it('renders exactly four labelled controls', () => {
+  it('renders exactly three labelled controls', () => {
     const { root } = build()
     const controls = root.querySelectorAll('.tool-btn')
-    expect(controls).toHaveLength(4)
+    expect(controls).toHaveLength(3)
     for (const c of controls) expect(c.getAttribute('aria-label')).toBeTruthy()
   })
 
-  it('links to the source repository in a safe new tab', () => {
+  /** The toolbar acts on the app; nothing in it navigates away. */
+  it('carries no outbound links', () => {
     const { root } = build()
-    const link = root.querySelector<HTMLAnchorElement>('[data-source]')!
-    expect(link.href).toBe(REPO_URL)
-    expect(link.rel).toBe('noopener noreferrer')
-    expect(link.target).toBe('_blank')
+    expect(root.querySelector('a')).toBeNull()
   })
 
   it('calls the handlers rather than owning panel state', () => {

@@ -125,8 +125,8 @@ describe('AboutPanel', () => {
     expect(root.textContent).not.toContain('Catalogue harvested')
   })
 
-  /** The toolbar carries the GitHub button; one route to the repo is enough. */
-  it('carries no source link of its own', () => {
+  /** The chrome links out nowhere; the credits name the sources in prose. */
+  it('carries no source link', () => {
     const root = document.createElement('div')
     new AboutPanel(root, '2026-01-15T00:00:00.000Z')
     expect(root.querySelector('a')).toBeNull()
