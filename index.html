@@ -1,77 +1,320 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Listen to Anything</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #07070c; overflow: hidden; }
-      canvas { display: block; position: fixed; inset: 0; }
+      /* --- Theme tokens -------------------------------------------------
+         The canvas is most of the app, so its colours live in src/ui/theme.ts
+         and these mirror them for the DOM chrome. `--scrim` is kept as raw RGB
+         components so panels can fade their own background out to nothing. */
+      :root, :root[data-theme="dark"] {
+        --bg: #0a0a0a;
+        --scrim: 10, 10, 10;
+        --fg: hsl(0, 0%, 98%);
+        --fg-muted: hsl(0, 0%, 68%);
+        --fg-faint: hsl(0, 0%, 45%);
+        --surface: rgba(18, 18, 22, .92);
+        --border: hsl(0, 0%, 20%);
+        --hover: rgba(255, 255, 255, .10);
+        --accent: #ff7a45;
+        color-scheme: dark;
+      }
+      :root[data-theme="light"] {
+        --bg: hsl(30, 13%, 64%);
+        --scrim: 186, 176, 163;
+        --fg: hsl(0, 0%, 6%);
+        --fg-muted: hsl(30, 8%, 24%);
+        --fg-faint: hsl(30, 8%, 36%);
+        --surface: hsla(30, 14%, 78%, .92);
+        --border: hsl(30, 10%, 42%);
+        --hover: rgba(0, 0, 0, .10);
+        --accent: #a8380c;
+        color-scheme: light;
+      }
+
+      /* --- Motion -------------------------------------------------------- */
+      :root {
+        --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        --dur: 200ms;
+        --dur-fast: 150ms;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        :root { --dur: 1ms; --dur-fast: 1ms; }
+      }
+
+      html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+      canvas { display: block; }
+      /* Scoped to the atlas on purpose: a blanket `inset: 0` here also supplies
+         top/left to the minimap, which beats its own right/bottom and pins it
+         to the top-left corner. */
+      #atlas { position: fixed; inset: 0; }
       #ui { position: fixed; inset: 0; pointer-events: none; }
       #ui > * { pointer-events: auto; }
+
+      button { font: inherit; }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      /* --- Intro -----------------------------------------------------------
+         Opaque, not a scrim: the atlas is rebuilding itself underneath and
+         should not be visible until the overlay has cleared. */
       [data-unlock] {
-        position: fixed; inset: 0; display: grid; place-items: center;
-        background: rgba(7,7,12,.82); backdrop-filter: blur(6px);
-        color: #ececf5; font: 16px/1.5 system-ui, sans-serif; text-align: center;
-        cursor: pointer;
+        position: fixed; inset: 0; z-index: 60;
+        display: grid; place-items: center; padding: 0 3rem;
+        background: var(--bg); color: var(--fg);
+        font: 16px/1.5 system-ui, sans-serif; text-align: center; cursor: pointer;
+        opacity: 1; transition: opacity 700ms ease;
       }
-      [data-unlock] h1 { font-size: 2rem; margin: 0 0 .5rem; letter-spacing: -.02em; }
-      [data-unlock] p { margin: .25rem 0; color: #a9a9c0; }
-      .unlock-cta { margin-top: 1.25rem !important; color: #ececf5 !important; font-weight: 600; }
+      /* Scoped under #ui deliberately: `#ui > *` sets pointer-events on every
+         child at ID specificity, which a plain attribute selector loses to.
+         Without this the fading overlay swallows the pointer for its whole
+         transition and the atlas ignores the cursor right after Start. */
+      #ui > [data-unlock][data-leaving] { opacity: 0; pointer-events: none; }
+      .unlock-title {
+        margin: 0; font-size: clamp(2rem, 5.5vw, 3.4rem); font-weight: 900;
+        letter-spacing: -.03em; line-height: 1.05;
+      }
+      /* Reserves its own width so the headline never reflows mid-cycle. */
+      .unlock-ellipsis { display: inline-block; width: 1.2em; text-align: left; }
+      .unlock-ellipsis::after { content: ''; animation: ellipsis steps(1, end) 1s infinite; }
+      @keyframes ellipsis {
+        0%   { content: ''; }
+        25%  { content: '.'; }
+        50%  { content: '..'; }
+        75%  { content: '...'; }
+        100% { content: ''; }
+      }
+      .unlock-cta {
+        margin-top: 2.5rem; padding: 10px 22px; border-radius: 999px;
+        border: 1px solid var(--border); background: var(--surface); color: var(--fg);
+        font: 600 14px system-ui, sans-serif; cursor: pointer;
+        transition: background var(--dur-fast) ease;
+      }
+      .unlock-cta:hover { background: var(--hover); }
+      @media (prefers-reduced-motion: reduce) {
+        [data-unlock] { transition-duration: 1ms; }
+        .unlock-ellipsis::after { animation: none; content: '...'; }
+      }
+
+      /* --- Top-left: readout + search ------------------------------------ */
       .axis-hud {
         position: fixed; top: 18px; left: 20px;
         font: 600 13px/1 system-ui, sans-serif; letter-spacing: .04em;
-        color: #ececf5; text-transform: uppercase;
-        text-shadow: 0 1px 8px rgba(0,0,0,.9);
+        color: var(--fg); text-transform: uppercase;
+        text-shadow: 0 1px 8px rgba(var(--scrim), .9);
       }
       .axis-sep { opacity: .45; margin: 0 .5em; }
-      .axis-genre { color: #a9a9c0; }
-      .now-playing {
-        position: fixed; left: 20px; bottom: 20px; width: min(360px, calc(100vw - 40px));
-        display: none; gap: 14px; padding: 14px;
-        background: rgba(16,16,24,.92); border: 1px solid #2a2a3c; border-radius: 12px;
-        backdrop-filter: blur(10px); color: #ececf5; font: 14px/1.4 system-ui, sans-serif;
-      }
-      .now-playing.visible { display: flex; }
-      .np-art { width: 76px; height: 76px; border-radius: 6px; object-fit: cover; flex: none; }
-      .np-body { min-width: 0; }
-      .now-playing h2 { margin: 0 0 2px; font-size: 15px; }
-      .np-artist { margin: 0; color: #c9c9de; }
-      .np-album { margin: 2px 0 0; color: #85859c; font-size: 12px; }
-      .np-links { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
-      .np-links a { color: #ff7a45; font-size: 12px; }
-      .np-close {
-        position: absolute; top: 8px; right: 10px; background: none; border: 0;
-        color: #85859c; font-size: 20px; cursor: pointer; line-height: 1;
-      }
-      .minimap {
-        position: fixed; right: 20px; bottom: 20px;
-        border: 1px solid #2a2a3c; border-radius: 8px; cursor: crosshair;
-      }
-      .search { position: fixed; top: 16px; right: 20px; width: 240px; }
+      .axis-genre { color: var(--fg-muted); }
+
+      .search { position: fixed; top: 44px; left: 20px; width: 240px; }
       .search input {
         width: 100%; padding: 8px 10px; border-radius: 8px;
-        border: 1px solid #2a2a3c; background: rgba(16,16,24,.92); color: #ececf5;
+        border: 1px solid var(--border); background: var(--surface); color: var(--fg);
         font: 13px system-ui, sans-serif;
       }
       .search-results { list-style: none; margin: 6px 0 0; padding: 0; }
       .search-results li {
-        padding: 7px 10px; background: rgba(16,16,24,.96); color: #ececf5;
-        border: 1px solid #2a2a3c; border-top: 0; font: 13px system-ui, sans-serif; cursor: pointer;
+        padding: 7px 10px; background: var(--surface); color: var(--fg);
+        border: 1px solid var(--border); border-top: 0;
+        font: 13px system-ui, sans-serif; cursor: pointer;
       }
-      .search-results li:hover { background: #23233a; }
+      .search-results li:hover { background: var(--hover); }
+
+      /* --- Top-right: the toolbar ---------------------------------------- */
+      .toolbar {
+        position: fixed; top: 14px; right: 20px;
+        display: flex; align-items: center; gap: 2px;
+      }
+      .tool-btn {
+        width: 34px; height: 34px; display: grid; place-items: center;
+        border: 0; border-radius: 999px; background: none; color: var(--fg);
+        cursor: pointer; opacity: .78;
+        transition: background var(--dur-fast) ease, opacity var(--dur-fast) ease;
+      }
+      .tool-btn:hover { background: var(--hover); opacity: 1; }
+      .tool-btn[aria-expanded="true"] { background: var(--hover); opacity: 1; box-shadow: inset 0 0 0 1px var(--border); }
+      .tool-btn svg { width: 18px; height: 18px; display: block; }
+
+      /* --- Overlay panels -------------------------------------------------
+         Deliberately not a card: the panel fades its own ground out to the
+         left so it reads as part of the atlas rather than a box on top of it.
+         The scrim is still needed — plain text over album art is unreadable. */
+      .panel {
+        position: fixed; top: 0; right: 0; bottom: 0;
+        /* The left padding is not decoration: it is the runway the scrim needs
+           to reach full opacity before any text starts, so nothing is ever set
+           over bare album art. Keep the padding inside the opaque stop below. */
+        width: min(620px, 100vw); padding: 62px 24px 28px min(140px, 20vw);
+        box-sizing: border-box; overflow-y: auto;
+        color: var(--fg); font: 14px/1.55 system-ui, sans-serif;
+        background: linear-gradient(
+          to left,
+          rgb(var(--scrim)) 0%,
+          rgb(var(--scrim)) 80%,
+          rgba(var(--scrim), 0) 100%
+        );
+        opacity: 0; transform: translateX(14px); pointer-events: none;
+        transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+      }
+      .panel[data-open] { opacity: 1; transform: none; pointer-events: auto; }
+
+      .panel h2 {
+        margin: 0; font: 600 12px/1 system-ui, sans-serif;
+        letter-spacing: .09em; text-transform: uppercase;
+      }
+      .panel p { margin: 0 0 .75em; color: var(--fg-muted); }
+      .panel p:last-child { margin-bottom: 0; }
+      .panel a { color: var(--accent); }
+
+      .panel-actions {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 12px; margin-top: 24px;
+      }
+      .btn {
+        padding: 7px 14px; border-radius: 8px; cursor: pointer;
+        border: 1px solid var(--border); background: var(--surface); color: var(--fg);
+        font: 13px system-ui, sans-serif;
+        transition: background var(--dur-fast) ease;
+      }
+      .btn:hover { background: var(--hover); }
+
+      /* --- Accordion ----------------------------------------------------- */
+      .acc-item { border-bottom: 1px solid var(--border); }
+      .acc-trigger {
+        width: 100%; display: flex; align-items: center; justify-content: space-between;
+        gap: 16px; padding: 15px 0; border: 0; background: none; color: inherit;
+        cursor: pointer; text-align: left;
+      }
+      .acc-chevron {
+        width: 16px; height: 16px; flex: none; color: var(--fg-faint);
+        transition: transform var(--dur) ease;
+      }
+      .acc-trigger[aria-expanded="true"] .acc-chevron { transform: rotate(180deg); }
+      /* Height is set in px by aboutPanel.ts; `auto` cannot be transitioned. */
+      .acc-panel { height: 0; overflow: hidden; transition: height var(--dur) var(--ease); }
+      .acc-body { padding-bottom: 18px; }
+
+      /* --- Settings controls ---------------------------------------------- */
+      .set-group { margin-bottom: 22px; }
+      .set-group > h2 { margin-bottom: 10px; color: var(--fg); }
+
+      .opt-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .opt {
+        flex: 1 1 0; min-width: 96px; padding: 10px 12px; border-radius: 10px;
+        border: 1px solid var(--border); background: var(--surface); color: var(--fg-muted);
+        font: 13px system-ui, sans-serif; cursor: pointer; text-align: left;
+        transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease,
+                    color var(--dur-fast) ease;
+      }
+      .opt:hover { background: var(--hover); }
+      .opt[aria-pressed="true"] {
+        border-color: var(--fg); color: var(--fg); font-weight: 600;
+      }
+
+      .set-slider { display: flex; align-items: center; gap: 12px; }
+      .set-slider label { flex: none; width: 96px; color: var(--fg-muted); font-size: 13px; }
+      .set-slider input[type=range] { flex: 1; accent-color: var(--accent); }
+      .set-slider output { flex: none; width: 42px; text-align: right; color: var(--fg-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+      .switch-row { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+      .switch { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13px; }
+      .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+      .switch-track {
+        width: 34px; height: 19px; border-radius: 999px; flex: none;
+        background: var(--surface); border: 1px solid var(--border); position: relative;
+        transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+      }
+      .switch-track::after {
+        content: ''; position: absolute; top: 2px; left: 2px;
+        width: 13px; height: 13px; border-radius: 50%; background: var(--fg-faint);
+        transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) ease;
+      }
+      .switch input:checked + .switch-track { background: var(--fg); border-color: var(--fg); }
+      .switch input:checked + .switch-track::after { transform: translateX(15px); background: var(--bg); }
+      .switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      /* --- Hover readout ---------------------------------------------------
+         Type over the atlas, not a card. Position, opacity and scale are all
+         driven per frame from src/ui/hoverLabel.ts, so there is no CSS
+         transition here — one would fight the follow. */
+      .hover-label {
+        position: fixed; top: 0; left: 0; will-change: transform, opacity;
+        max-width: min(420px, 42vw); pointer-events: none;
+        opacity: 0; visibility: hidden;
+        transform-origin: 0 100%;
+        color: var(--fg); font: 14px/1.35 system-ui, sans-serif;
+        /* Layered rather than one soft blur: this text sits over album art at
+           any brightness, and a single shadow disappears against pale covers. */
+        text-shadow:
+          0 1px 2px rgba(var(--scrim), 1),
+          0 2px 10px rgba(var(--scrim), .98),
+          0 0 30px rgba(var(--scrim), .92),
+          0 0 60px rgba(var(--scrim), .8);
+      }
+      .hover-label.flipped { text-align: right; transform-origin: 100% 100%; }
+      .hover-label h2 {
+        margin: 0 0 3px; font-size: clamp(22px, 2.4vw, 34px); font-weight: 800;
+        letter-spacing: -.02em; line-height: 1.05;
+        overflow-wrap: anywhere;
+      }
+      .hover-meta { margin: 0; color: var(--fg); opacity: .82; font-size: 14px; font-weight: 500; }
+
+      /* --- Now playing -----------------------------------------------------
+         Anchored to the tile it came from, not to a corner: position is written
+         per frame from src/ui/nowPlaying.ts, so `top`/`left` stay at 0 and the
+         transform does the placing. Only opacity is transitioned here — a
+         transition on the transform would fight the follow. */
+      .now-playing {
+        position: fixed; top: 0; left: 0;
+        /* Border-box on purpose: the card has to fit in the gap left beside a
+           magnified tile, and that sum is done in JS against this number. */
+        width: min(360px, calc(100vw - 40px)); box-sizing: border-box;
+        display: flex; gap: 16px; padding: 18px;
+        background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+        backdrop-filter: blur(10px); color: var(--fg); font: 15px/1.45 system-ui, sans-serif;
+        /* Layered under the panels, over the atlas. */
+        box-shadow: 0 8px 40px rgba(var(--scrim), .55);
+        opacity: 0; visibility: hidden; will-change: transform, opacity;
+        transition: opacity var(--dur) var(--ease), visibility 0s linear var(--dur);
+      }
+      .now-playing.visible {
+        opacity: 1; visibility: visible;
+        transition: opacity var(--dur) var(--ease);
+      }
+      /* The card floats over the middle of the atlas, so it must not swallow
+         the cursor: hovering it has to keep driving the lens underneath, or
+         browsing stops dead wherever the card happens to be. Only its controls
+         take the pointer. Scoped under #ui to outrank `#ui > *`. */
+      #ui > .now-playing { pointer-events: none; }
+      .np-links a, .np-close { pointer-events: auto; }
+      /* Flipped to the left of its tile: put the art on the inside edge, so the
+         card still reads as pointing back at the hex it describes. */
+      .now-playing.flipped { flex-direction: row-reverse; }
+      .now-playing.flipped .np-body { text-align: right; }
+      .now-playing.flipped .np-links { justify-content: flex-end; }
+      .now-playing.flipped .np-close { right: auto; left: 12px; }
+      .np-art { width: 96px; height: 96px; border-radius: 8px; object-fit: cover; flex: none; }
+      .np-body { min-width: 0; }
+      .now-playing h2 { margin: 0 0 3px; font-size: 18px; text-transform: none; letter-spacing: 0; }
+      .np-artist { margin: 0; color: var(--fg-muted); }
+      .np-album { margin: 3px 0 0; color: var(--fg-faint); font-size: 13px; }
+      .np-links { margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
+      .np-links a { color: var(--accent); font-size: 13px; }
+      .np-close {
+        position: absolute; top: 8px; right: 12px; background: none; border: 0;
+        color: var(--fg-faint); font-size: 22px; cursor: pointer; line-height: 1;
+      }
+
+      /* --- Bottom chrome --------------------------------------------------- */
+      .minimap {
+        position: fixed; right: 20px; bottom: 20px;
+        border: 1px solid var(--border); border-radius: 8px; cursor: crosshair;
+      }
       .stale-notice {
         position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
-        margin: 0; color: #6a6a80; font: 11px system-ui, sans-serif;
+        margin: 0; color: var(--fg-faint); font: 11px system-ui, sans-serif;
       }
-      .volume {
-        position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
-        display: flex; align-items: center; gap: 8px;
-        padding: 6px 10px; border-radius: 999px;
-        background: rgba(16,16,24,.9); border: 1px solid #2a2a3c;
-      }
-      .volume button { background: none; border: 0; cursor: pointer; font-size: 15px; line-height: 1; }
-      .volume input[type=range] { width: 90px; accent-color: #ff7a45; }
     </style>
   </head>
   <body>

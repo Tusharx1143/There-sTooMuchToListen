@@ -1,3 +1,4 @@
+import type { Offset } from './atlas/hex'
 import { AtlasLayout } from './atlas/layout'
 import { CellStore, loadManifest } from './data/loader'
 import { ImageCache } from './render/imageCache'
@@ -11,7 +12,13 @@ import { NowPlayingCard } from './ui/nowPlaying'
 import { Minimap } from './ui/minimap'
 import { SearchBox, buildTargets } from './ui/search'
 import { showStaleNotice } from './ui/staleNotice'
-import { VolumeControl } from './ui/volume'
+import { SettingsStore } from './state/settings'
+import { ThemeController } from './state/theme'
+import { Toolbar } from './ui/toolbar'
+import { AboutPanel } from './ui/aboutPanel'
+import { SettingsPanel } from './ui/settingsPanel'
+import { closeAllPanels } from './ui/panel'
+import { HoverLabel } from './ui/hoverLabel'
 import { Momentum } from './render/momentum'
 
 async function boot(): Promise<void> {
@@ -26,17 +33,38 @@ async function boot(): Promise<void> {
     manifest.genres.map((g) => g.id),
   )
 
+  const settings = new SettingsStore()
+  const theme = new ThemeController(settings)
+
   const store = new CellStore()
   const images = new ImageCache()
-  const renderer = new AtlasRenderer(canvas, layout, store, images)
+  const renderer = new AtlasRenderer(
+    canvas,
+    layout,
+    store,
+    images,
+    () => document.createElement('canvas'),
+    settings,
+  )
   const audio = new AudioEngine()
+
+  renderer.setPalette(theme.palette)
 
   const genreLabels = new Map(manifest.genres.map((g) => [g.id, g.label]))
   const hud = new AxisHud(root, layout, genreLabels)
 
+  // Hoisted so the card's close button can reach it; both only ever run in
+  // response to a click, long after `label` below is initialised.
+  function setPinned(songId: string | null, hex: Offset | null = null): void {
+    renderer.pinned = songId !== null
+    renderer.pinnedTile = songId === null ? null : hex
+    label.setPinned(songId)
+  }
+
   const card = new NowPlayingCard(root, () => {
     audio.unpin()
     card.hide()
+    setPinned(null)
   })
 
   const minimap = new Minimap(root, layout, (world) => {
@@ -44,7 +72,14 @@ async function boot(): Promise<void> {
     renderer.panBy(world.x - window.innerWidth / 2, world.y - window.innerHeight / 2)
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
   })
+  minimap.setPalette(theme.palette)
   minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+
+  // Both canvases carry their own colours, so the theme has to reach each.
+  theme.onChange(() => {
+    renderer.setPalette(theme.palette)
+    minimap.setPalette(theme.palette)
+  })
 
   new SearchBox(root, buildTargets(layout, genreLabels), (t) => {
     const centre =
@@ -57,32 +92,81 @@ async function boot(): Promise<void> {
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
   })
 
-  new VolumeControl(root, audio)
+  const about = new AboutPanel(root, manifest.harvestedAt)
+  const settingsPanel = new SettingsPanel(root, settings, audio)
+
+  const toolbar = new Toolbar(root, settings, theme, {
+    onAbout: () => about.panel.toggle(),
+    onSettings: () => settingsPanel.panel.toggle(),
+  })
+  // A panel and the hover readout share the right-hand side of the screen.
+  about.panel.onChange((open) => {
+    toolbar.setExpanded('about', open)
+    label.setHidden(open)
+  })
+  settingsPanel.panel.onChange((open) => {
+    toolbar.setExpanded('settings', open)
+    label.setHidden(open)
+  })
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAllPanels()
+  })
 
   renderer.failedSongs = audio.failed
-  audio.onFailure(() => renderer.invalidate())
+  audio.onFailure(() => renderer.invalidateField())
 
-  // The lens picks the focal tile; the HUD and audio follow it rather than raw
-  // pointer position, so they only fire once it has parked.
+  // Audio waits for the lens to park — starting a preview per tile crossed
+  // would be unlistenable.
   renderer.onFocalChange((hex) => {
-    hud.update(hex)
     audio.hover(hex ? songAt(hex, layout, store) : null)
+  })
+
+  // The readouts track the lens as it travels instead. The label fades itself
+  // out while moving, so it names the tile without strobing through hundreds.
+  const label = new HoverLabel(root)
+  renderer.onHoverChange((hex) => {
+    hud.update(hex)
+    label.show(hex ? songAt(hex, layout, store) : null)
+  })
+  // Both readouts are placed per frame rather than on discrete changes: the
+  // label follows the lens, and the card follows the tile it was pinned from,
+  // which moves whenever the atlas pans or the lens magnifies it.
+  renderer.onFrame(() => {
+    const viewport = { w: window.innerWidth, h: window.innerHeight }
+    label.update(renderer.lensCentre, renderer.speedScale, viewport)
+    card.update(
+      renderer.pinnedTile ? renderer.anchorOf(renderer.pinnedTile) : null,
+      viewport,
+    )
   })
 
   renderer.start()
   window.addEventListener('resize', () => renderer.resize())
 
+  // Reaching back into the atlas dismisses whatever is open, the same way
+  // clicking outside a dialog would.
+  canvas.addEventListener('pointerdown', () => closeAllPanels())
+
   const playAt = (x: number, y: number): void => {
+    if (renderer.introPlaying) return
     const hex = renderer.hoverAt(x, y)
     const song = hex ? songAt(hex, layout, store) : null
     hud.update(hex)
     if (!song) return
     audio.pin(song)
     card.show(song)
+    setPinned(song.id, hex)
   }
 
   const syncMinimap = (): void =>
     minimap.update({ ...renderer.view, w: window.innerWidth, h: window.innerHeight })
+
+  // Tile size rewrites every world coordinate, so the minimap's viewport
+  // rectangle is stale until it is told.
+  settings.onChange((_s, changed) => {
+    if (changed === 'tileSize') syncMinimap()
+  })
 
   const momentum = new Momentum((dx, dy) => {
     renderer.panBy(dx, dy)
@@ -116,15 +200,21 @@ async function boot(): Promise<void> {
         syncMinimap()
       },
       onClick: (x, y) => {
+        // The reveal is still moving the world; a tile picked now is not the
+        // tile that ends up under the cursor. The reference ignores selection
+        // during its intro for the same reason.
+        if (renderer.introPlaying) return
         const hex = renderer.hoverAt(x, y)
         const song = hex ? songAt(hex, layout, store) : null
         if (!song) return
         if (audio.pinned?.id === song.id) {
           audio.unpin()
           card.hide()
+          setPinned(null)
         } else {
           audio.pin(song)
           card.show(song)
+          setPinned(song.id, hex)
         }
       },
       onLeave: () => {
@@ -137,7 +227,7 @@ async function boot(): Promise<void> {
     canvas.addEventListener('pointerdown', () => momentum.stop())
   }
 
-  showUnlockOverlay(root, () => {})
+  showUnlockOverlay(root, () => renderer.playIntro())
 }
 
 void boot().catch((err: unknown) => {

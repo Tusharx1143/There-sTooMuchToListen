@@ -3,11 +3,11 @@ export type Offset = { col: number; row: number }
 export type Point = { x: number; y: number }
 
 /**
- * Distance from a hex centre to a corner, in CSS pixels. Small on purpose —
- * legibility comes from the lens (src/render/lens.ts), not from tile size, and
- * a dense field is the whole point.
+ * Distance from a hex centre to a corner, in CSS pixels. Sized so that a tile
+ * is a readable album cover at rest, without the lens: the whole field carries
+ * real art, and the lens (src/render/lens.ts) only picks one out of it.
  */
-export const HEX_SIZE = 12
+export const HEX_SIZE = 56
 
 const SQRT3 = Math.sqrt(3)
 

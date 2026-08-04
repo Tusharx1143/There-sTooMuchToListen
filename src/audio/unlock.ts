@@ -1,25 +1,48 @@
+/** How long the overlay takes to clear, matching the reference's intro fade. */
+export const INTRO_FADE_MS = 700
+
 /**
- * Browsers block audio until a user gesture. One click anywhere unlocks
- * playback for the whole session.
+ * The opening screen. It also serves a hard requirement: browsers block audio
+ * until a user gesture, and this is that gesture.
+ *
+ * `onUnlock` fires immediately on the click, so the atlas can start its own
+ * reveal underneath while the overlay is still fading out.
  */
 export function showUnlockOverlay(root: HTMLElement, onUnlock: () => void): void {
   const el = document.createElement('div')
   el.setAttribute('data-unlock', '')
-  el.innerHTML = `
-    <div class="unlock-inner">
-      <h1>Listen to Anything</h1>
-      <p>Every tile is a song. Move your cursor and let it rest.</p>
-      <p class="unlock-cta">Click anywhere to start</p>
-    </div>
-  `
+
+  const inner = document.createElement('div')
+  inner.className = 'unlock-inner'
+
+  const h1 = document.createElement('h1')
+  h1.className = 'unlock-title'
+  // The ellipsis is a pseudo-element cycling '' → . → .. → ... so the line
+  // never reflows as it animates.
+  h1.innerHTML = '<i>&ldquo;There&rsquo;s too much to listen to&rdquo;</i><span class="unlock-ellipsis"></span>'
+
+  const cta = document.createElement('button')
+  cta.type = 'button'
+  cta.className = 'unlock-cta'
+  cta.setAttribute('data-unlock-start', '')
+  cta.textContent = 'Start listening'
+
+  inner.append(h1, cta)
+  el.appendChild(inner)
 
   let fired = false
-  el.addEventListener('click', () => {
+  const start = (): void => {
     if (fired) return
     fired = true
-    el.remove()
+    el.setAttribute('data-leaving', '')
     onUnlock()
-  })
 
+    const done = (): void => el.remove()
+    el.addEventListener('transitionend', done, { once: true })
+    // transitionend never arrives under prefers-reduced-motion.
+    setTimeout(done, INTRO_FADE_MS + 120)
+  }
+
+  el.addEventListener('click', start)
   root.appendChild(el)
 }

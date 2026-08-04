@@ -1,6 +1,7 @@
 import type { Point } from '../atlas/hex'
 import type { AtlasLayout } from '../atlas/layout'
 import type { Rect } from '../atlas/viewport'
+import { PALETTES, type Palette } from '../state/theme'
 
 const WIDTH = 160
 const HEIGHT = 96
@@ -8,6 +9,8 @@ const HEIGHT = 96
 export class Minimap {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
+  private colors: Palette['minimap'] = PALETTES.dark.minimap
+  private last: Rect | null = null
 
   constructor(
     root: HTMLElement,
@@ -35,21 +38,29 @@ export class Minimap {
     root.appendChild(this.canvas)
   }
 
+  /** Repaints in the new theme's colours, keeping the current viewport rect. */
+  setPalette(p: Palette): void {
+    this.colors = p.minimap
+    if (this.last) this.update(this.last)
+  }
+
   update(view: Rect): void {
+    this.last = view
     const sx = WIDTH / this.layout.widthPx
     const sy = HEIGHT / this.layout.heightPx
 
-    this.ctx.fillStyle = 'rgba(16,16,24,.9)'
+    this.ctx.fillStyle = this.colors.bg
     this.ctx.fillRect(0, 0, WIDTH, HEIGHT)
 
     // Genre bands, so the map reads as rows of related styles.
     const bandH = HEIGHT / this.layout.genres.length
     for (let i = 0; i < this.layout.genres.length; i++) {
-      this.ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.02)'
+      if (i % 2 !== 0) continue
+      this.ctx.fillStyle = this.colors.band
       this.ctx.fillRect(0, i * bandH, WIDTH, bandH)
     }
 
-    this.ctx.strokeStyle = '#ff7a45'
+    this.ctx.strokeStyle = this.colors.view
     this.ctx.lineWidth = 1.5
     this.ctx.strokeRect(
       view.x * sx,

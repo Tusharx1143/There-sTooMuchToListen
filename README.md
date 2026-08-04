@@ -13,8 +13,13 @@ music, one hex at a time.
 - **Drag to travel.** The atlas spans 40 countries × 30 genres = 1,200 cells,
   60,000+ songs. Pan freely; tiles stream in as you go.
 - **Click to pin.** Lock a song in place so it keeps playing while you keep
-  browsing. A detail card shows the title, artist, album art, and links out to the
-  full track.
+  browsing. A detail card opens beside that tile and tracks it as you pan,
+  flipping to whichever side has the room; it shows the title, artist, album art,
+  and links out to the full track. The card takes the cursor only on its own
+  links, so the lens keeps working underneath it.
+- **Two render presets.** `minimal` draws flat tiles. `depth` shades each hex as
+  a bevelled plate sunk into a raised frame, with the relief deepening toward the
+  lens centre so the tile under the cursor stands proud of the field.
 - **Search and minimap.** Jump straight to a country or genre by name, or use the
   minimap to see where you are in the whole atlas and click to teleport.
 - **Touch-friendly.** On phones and tablets, drag to pan and tap to play — the
