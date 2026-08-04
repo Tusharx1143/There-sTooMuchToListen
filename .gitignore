@@ -37,8 +37,11 @@ bin/
 ### Node
 node_modules/
 dist/
-public/data/*
-!public/data/.gitkeep
+
+### Harvested assets
+# The data is committed so Render's static build can publish it; the local
+# album-art cache is not (the app loads art/previews from remote URLs).
+public/media/
 
 ### Playwright
 test-results/
