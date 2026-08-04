@@ -3,7 +3,7 @@ import { AtlasLayout } from '../src/atlas/layout'
 import { CellStore } from '../src/data/loader'
 import { requiredCellKeys } from '../src/atlas/viewport'
 import { songAt, AtlasRenderer } from '../src/render/canvas'
-import { ImageCache } from '../src/render/imageCache'
+import { ImageCache, IMAGE_CACHE_CAPACITY } from '../src/render/imageCache'
 import { axialToPixel, offsetToAxial, type Offset } from '../src/atlas/hex'
 import { makeLens, transformTile } from '../src/render/lens'
 import type { Song } from '../src/types'
@@ -135,27 +135,33 @@ describe('AtlasRenderer lens', () => {
 })
 
 describe('AtlasRenderer.draw', () => {
-  it('requests art for only a handful of tiles, not the whole field', () => {
+  it('requests art for every tile it draws, and stays inside the cache', async () => {
     const requested: string[] = []
     const images = {
       get: (url: string) => { requested.push(url); return null },
       onLoad: () => () => {},
     } as unknown as ImageCache
 
-    const fetcher = (async () => ({ ok: true, status: 200, json: async () => songs(50) })) as unknown as typeof fetch
+    const store = new CellStore({
+      fetcher: (async () => ({ ok: true, status: 200, json: async () => songs(50) })) as unknown as typeof fetch,
+    })
     const r = new AtlasRenderer(
-      stubCanvas(), new AtlasLayout(['us', 'br'], [14, 21]), new CellStore({ fetcher }), images,
+      stubCanvas(), new AtlasLayout(['us', 'br'], [14, 21]), store, images,
     )
 
     r.lensTarget = { x: 100, y: 100 }
     r.step(5000)
-    r.redraw()
+    r.redraw()                                     // asks for the cells
+    await vi.waitFor(() => expect(store.status('us-14')).toBe('ready'))
+    r.redraw()                                     // now the songs are there
 
-    expect(requested.length).toBeLessThan(60)
+    // Every visible tile carries a cover, so this tracks the screenful — the
+    // ceiling that matters is the image cache, not a lens-sized handful.
+    expect(requested.length).toBeGreaterThan(0)
+    expect(new Set(requested).size).toBeLessThan(IMAGE_CACHE_CAPACITY)
   })
 
-  it('loads only the cells near the lens, not the whole viewport', () => {
-    // A big atlas, so lens-scoped and viewport-scoped differ starkly.
+  it('loads every cell the viewport covers, not just the lens neighbourhood', () => {
     const countries = Array.from({ length: 40 }, (_, i) => `c${i}`)
     const genres = Array.from({ length: 30 }, (_, i) => i + 1)
     const big = new AtlasLayout(countries, genres)
@@ -174,9 +180,8 @@ describe('AtlasRenderer.draw', () => {
     )
 
     expect(asked).toHaveLength(1)
-    expect(asked[0]!.length).toBeGreaterThan(0)
-    // The whole point of DATA_RADIUS_PX: a small fraction of the visible field.
-    expect(asked[0]!.length).toBeLessThan(viewportScoped.length / 2)
+    // Anything short of this leaves visible tiles with no cover to draw.
+    expect(new Set(asked[0])).toEqual(new Set(viewportScoped))
   })
 })
 
@@ -246,8 +251,9 @@ describe('offscreen field cache', () => {
     const r = new AtlasRenderer(main.canvas, bigLayout(), emptyStore(), stubImages(), () => field.canvas)
 
     r.redraw()
-    const fullFieldFills = field.counts.fill ?? 0
-    expect(fullFieldFills).toBeGreaterThan(4000)
+    // Every tile in the field is an art tile, so clips count them.
+    const fullFieldTiles = field.counts.clip ?? 0
+    expect(fullFieldTiles).toBeGreaterThan(200)
 
     main.reset()
     field.reset()
@@ -257,9 +263,9 @@ describe('offscreen field cache', () => {
     r.redraw()
 
     // The field is untouched, and the live pass covers only the disc.
-    expect(field.counts.fill ?? 0).toBe(0)
+    expect(field.counts.clip ?? 0).toBe(0)
     expect(main.counts.drawImage ?? 0).toBe(1)
-    expect(main.counts.fill ?? 0).toBeLessThan(fullFieldFills / 3)
+    expect(main.counts.clip ?? 0).toBeLessThan(fullFieldTiles / 3)
   })
 
   it('repaints the field when the view pans', () => {
@@ -273,7 +279,7 @@ describe('offscreen field cache', () => {
     r.panBy(240, 160)
     r.redraw()
 
-    expect(field.counts.fill ?? 0).toBeGreaterThan(4000)
+    expect(field.counts.clip ?? 0).toBeGreaterThan(200)
   })
 
   it('falls back to drawing every tile live without an offscreen context', () => {
@@ -284,10 +290,10 @@ describe('offscreen field cache', () => {
     r.redraw()
 
     expect(main.counts.drawImage ?? 0).toBe(0)
-    expect(main.counts.fill ?? 0).toBeGreaterThan(4000)
+    expect(main.counts.clip ?? 0).toBeGreaterThan(200)
   })
 
-  it('does not repaint the field when cells load or evict', async () => {
+  it('repaints the field when cells load', async () => {
     const main = countingCanvas()
     const field = countingCanvas()
     const fetcher = (async () => ({ ok: true, status: 200, json: async () => songs(50) })) as unknown as typeof fetch
@@ -301,9 +307,10 @@ describe('offscreen field cache', () => {
     await loaded
     field.reset()
 
-    // Cell traffic must not touch the cached layer: the lens roams constantly,
-    // which evicts and refetches, and coupling the two thrashes the cache.
+    // The undistorted field draws real covers, so arriving cells change it and
+    // the cached layer has to be redrawn — the frame loop's dirty flag is what
+    // keeps a burst of arrivals down to one repass per frame.
     r.redraw()
-    expect(field.counts.fill ?? 0).toBe(0)
+    expect(field.counts.clip ?? 0).toBeGreaterThan(200)
   })
 })

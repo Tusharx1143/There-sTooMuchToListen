@@ -1,7 +1,12 @@
-/** Below this radial extent a tile is too small to be worth an image request. */
-export const ART_MIN_PX = 32
+/**
+ * Below this radial extent a tile is too small to be worth an image request.
+ * It has to stay under `HEX_SIZE * TILE_GAP / (LENS_K + 1)` — the tightest a
+ * tile gets anywhere inside the lens — or the rim would drop to flat colour
+ * while the undistorted field around it carries art, and the seam shows.
+ */
+export const ART_MIN_PX = 14
 /** Below this, skip the hex path entirely and draw a bare rect. */
-export const SOLID_MIN_PX = 8
+export const SOLID_MIN_PX = 6
 export const TILE_GAP = 0.94
 
 export type TileTier = 'art' | 'solid' | 'speck'

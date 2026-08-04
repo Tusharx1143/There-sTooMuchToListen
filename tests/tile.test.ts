@@ -115,7 +115,7 @@ describe('drawTile', () => {
 
   it('draws specks as bare rects with no clip or gradient', () => {
     const { ctx, calls } = fakeCtx()
-    drawTile(ctx, opts({ size: 2, radial: 1, tangential: 1 }))
+    drawTile(ctx, opts({ size: SOLID_MIN_PX / 2, radial: 1, tangential: 1 }))
     expect(calls).toContain('fillRect')
     expect(calls).not.toContain('clip')
     expect(calls).not.toContain('createLinearGradient')
@@ -124,7 +124,8 @@ describe('drawTile', () => {
 
   it('draws solid tiles as filled hexes with no gradient', () => {
     const { ctx, calls } = fakeCtx()
-    drawTile(ctx, opts({ size: 12, radial: 1, tangential: 1 }))
+    // Between the two thresholds, wherever they sit.
+    drawTile(ctx, opts({ size: (SOLID_MIN_PX + ART_MIN_PX) / 2, radial: 1, tangential: 1 }))
     expect(calls).toContain('fill')
     expect(calls).not.toContain('clip')
     expect(calls).not.toContain('createLinearGradient')

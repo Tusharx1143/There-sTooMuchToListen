@@ -1,8 +1,22 @@
-export const IMAGE_CACHE_CAPACITY = 600
+/**
+ * Every visible tile is an art tile now, so the resident set is roughly a
+ * screenful of covers rather than the lens neighbourhood. Sized to hold that
+ * plus a pan's worth of history: if it ever falls below the visible count,
+ * a single field repaint evicts entries it is still drawing and re-requests
+ * them on the next one, forever.
+ */
+export const IMAGE_CACHE_CAPACITY = 1000
+
+/**
+ * Covers are harvested at 600x600. Decoded, that is 1.4 MB each — a screenful
+ * would be most of a gigabyte — and no tile is ever drawn near that size, so
+ * each one is rescaled once on arrival and the source bitmap is dropped.
+ */
+export const ART_TEXTURE_PX = 256
 
 type Entry =
   | { status: 'loading'; img: HTMLImageElement }
-  | { status: 'ready'; img: HTMLImageElement }
+  | { status: 'ready'; texture: CanvasImageSource }
   | { status: 'failed' }
 
 export class ImageCache {
@@ -26,15 +40,15 @@ export class ImageCache {
     return () => this.listeners.delete(cb)
   }
 
-  /** Returns the decoded image, or null while loading / after failure. */
-  get(url: string): HTMLImageElement | null {
+  /** Returns the drawable texture, or null while loading / after failure. */
+  get(url: string): CanvasImageSource | null {
     const existing = this.entries.get(url)
 
     if (existing) {
       // Touch for LRU.
       this.entries.delete(url)
       this.entries.set(url, existing)
-      return existing.status === 'ready' ? existing.img : null
+      return existing.status === 'ready' ? existing.texture : null
     }
 
     const img = this.make()
@@ -46,7 +60,9 @@ export class ImageCache {
     void img
       .decode()
       .then(() => {
-        if (this.entries.has(url)) this.entries.set(url, { status: 'ready', img })
+        if (this.entries.has(url)) {
+          this.entries.set(url, { status: 'ready', texture: rescale(img) })
+        }
         this.emit()
       })
       .catch(() => {
@@ -71,9 +87,33 @@ export class ImageCache {
 }
 
 /**
- * Colour for a hex with no song behind it. Most of the field is unloaded by
- * design — only the lens neighbourhood fetches cells — so the speckle is what
- * keeps the grid looking dense for free.
+ * Redraws a cover at ART_TEXTURE_PX so the full-size bitmap can be collected.
+ * Falls back to the source image wherever there is no 2D context to draw into
+ * — headless test runs, mainly — since the only thing lost is the saving.
+ */
+let canRescale: boolean | null = null
+
+function rescale(img: HTMLImageElement): CanvasImageSource {
+  if (canRescale === false) return img
+  try {
+    const c = document.createElement('canvas')
+    c.width = ART_TEXTURE_PX
+    c.height = ART_TEXTURE_PX
+    const ctx = c.getContext('2d')
+    // Probed once, not per cover: a stubbed-out canvas complains every call.
+    canRescale = ctx !== null
+    if (!ctx) return img
+    ctx.drawImage(img, 0, 0, ART_TEXTURE_PX, ART_TEXTURE_PX)
+    return c
+  } catch {
+    canRescale = false
+    return img
+  }
+}
+
+/**
+ * Colour for a hex whose cell has not arrived yet, and for the gaps past the
+ * end of a short cell. Keeps the grid looking populated while the covers load.
  */
 export function speckleColor(col: number, row: number): string {
   // Distinct multipliers per axis, so (2,11) and (11,2) don't land on the same

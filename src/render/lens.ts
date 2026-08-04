@@ -5,11 +5,19 @@ import type { Point } from '../atlas/hex'
  * undisturbed field outside it is what makes the atlas read as dense.
  */
 export const LENS_RADIUS = 380
-/** Peak magnification at the lens centre is K + 1. */
-export const LENS_K = 8
+/**
+ * Peak magnification at the lens centre is K + 1. Modest, because the tiles it
+ * magnifies are already album-cover sized: at the old K the focal tile grew
+ * wider than the disc containing it.
+ */
+export const LENS_K = 2
 export const LENS_TAU_MS = 90
-export const BRIGHT_MIN = 0.12
-export const BRIGHT_POW = 3
+/**
+ * Brightness of the undistorted field. High enough to read the covers out
+ * there — the lens marks focus, it is not the only lit part of the atlas.
+ */
+export const BRIGHT_MIN = 0.7
+export const BRIGHT_POW = 2
 
 export type Lens = { cx: number; cy: number; radius: number; k: number }
 

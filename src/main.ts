@@ -60,7 +60,7 @@ async function boot(): Promise<void> {
   new VolumeControl(root, audio)
 
   renderer.failedSongs = audio.failed
-  audio.onFailure(() => renderer.invalidate())
+  audio.onFailure(() => renderer.invalidateField())
 
   // The lens picks the focal tile; the HUD and audio follow it rather than raw
   // pointer position, so they only fire once it has parked.

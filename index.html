@@ -6,7 +6,11 @@
     <title>Listen to Anything</title>
     <style>
       html, body { margin: 0; height: 100%; background: #07070c; overflow: hidden; }
-      canvas { display: block; position: fixed; inset: 0; }
+      canvas { display: block; }
+      /* Scoped to the atlas on purpose: a blanket `inset: 0` here also supplies
+         top/left to the minimap, which beats its own right/bottom and pins it
+         to the top-left corner. */
+      #atlas { position: fixed; inset: 0; }
       #ui { position: fixed; inset: 0; pointer-events: none; }
       #ui > * { pointer-events: auto; }
       [data-unlock] {
@@ -27,22 +31,22 @@
       .axis-sep { opacity: .45; margin: 0 .5em; }
       .axis-genre { color: #a9a9c0; }
       .now-playing {
-        position: fixed; left: 20px; bottom: 20px; width: min(360px, calc(100vw - 40px));
-        display: none; gap: 14px; padding: 14px;
-        background: rgba(16,16,24,.92); border: 1px solid #2a2a3c; border-radius: 12px;
-        backdrop-filter: blur(10px); color: #ececf5; font: 14px/1.4 system-ui, sans-serif;
+        position: fixed; left: 20px; bottom: 20px; width: min(440px, calc(100vw - 40px));
+        display: none; gap: 16px; padding: 18px;
+        background: rgba(16,16,24,.92); border: 1px solid #2a2a3c; border-radius: 14px;
+        backdrop-filter: blur(10px); color: #ececf5; font: 15px/1.45 system-ui, sans-serif;
       }
       .now-playing.visible { display: flex; }
-      .np-art { width: 76px; height: 76px; border-radius: 6px; object-fit: cover; flex: none; }
+      .np-art { width: 96px; height: 96px; border-radius: 8px; object-fit: cover; flex: none; }
       .np-body { min-width: 0; }
-      .now-playing h2 { margin: 0 0 2px; font-size: 15px; }
+      .now-playing h2 { margin: 0 0 3px; font-size: 18px; }
       .np-artist { margin: 0; color: #c9c9de; }
-      .np-album { margin: 2px 0 0; color: #85859c; font-size: 12px; }
-      .np-links { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
-      .np-links a { color: #ff7a45; font-size: 12px; }
+      .np-album { margin: 3px 0 0; color: #85859c; font-size: 13px; }
+      .np-links { margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
+      .np-links a { color: #ff7a45; font-size: 13px; }
       .np-close {
-        position: absolute; top: 8px; right: 10px; background: none; border: 0;
-        color: #85859c; font-size: 20px; cursor: pointer; line-height: 1;
+        position: absolute; top: 8px; right: 12px; background: none; border: 0;
+        color: #85859c; font-size: 22px; cursor: pointer; line-height: 1;
       }
       .minimap {
         position: fixed; right: 20px; bottom: 20px;
